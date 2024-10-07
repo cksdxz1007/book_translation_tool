@@ -14,7 +14,7 @@
 
 ## 安装要求
 
-- Python 3.9+
+- Python 3.12+
 - Flask
 - PyPDF2
 - requests
