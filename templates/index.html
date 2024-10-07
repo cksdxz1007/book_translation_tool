@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 翻译工具</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        form, #file-info, #progress, #result {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        input[type="file"], input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #progress-text {
+            text-align: center;
+            font-weight: bold;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .service-config {
+            display: block;
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .save-btn {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>PDF 翻译工具</h1>
+    <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".pdf">
+        <button type="submit">上传</button>
+    </form>
+    <div id="file-info" style="display: none;">
+        <p>文件名: <span id="filename"></span></p>
+        <p>总页数: <span id="total-pages"></span></p>
+        <label for="start-page">起始页码:</label>
+        <input type="number" id="start-page" min="1" value="1">
+        <label for="end-page">结束页码:</label>
+        <input type="number" id="end-page" min="1">
+        <label for="target-language">目标语言:</label>
+        <input type="text" id="target-language" value="中文">
+        <div id="ollama-config">
+            <label for="ollama-url">Ollama URL:</label>
+            <input type="text" id="ollama-url" value="http://localhost:11434/api/generate">
+            <label for="ollama-model">Ollama 模型名称:</label>
+            <input type="text" id="ollama-model" value="qwen2.5:7b">
+        </div>
+        <button id="translate-btn">开始翻译</button>
+    </div>
+    <div id="progress" style="display: none;">
+        <p id="progress-text">翻译进行中...</p>
+    </div>
+    <div id="result" style="display: none;">
+        <p>翻译完成。<a id="download-link" href="#">下载结果</a></p>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            $('#upload-form').submit(function(e) {
+                e.preventDefault();
+                var formData = new FormData(this);
+                $.ajax({
+                    url: '/',
+                    type: 'POST',
+                    data: formData,
+                    contentType: false,
+                    processData: false,
+                    success: function(response) {
+                        $('#filename').text(response.filename);
+                        $('#total-pages').text(response.total_pages);
+                        $('#end-page').attr('max', response.total_pages).val(response.total_pages);
+                        $('#file-info').show();
+                    }
+                });
+            });
+
+            $('#translate-btn').click(function() {
+                var data = {
+                    filename: $('#filename').text(),
+                    start_page: $('#start-page').val(),
+                    end_page: $('#end-page').val(),
+                    target_language: $('#target-language').val(),
+                    ollama_url: $('#ollama-url').val(),
+                    ollama_model: $('#ollama-model').val()  // 添加这行来获取用户指定的模型名称
+                };
+                $('#progress').show();
+                $.ajax({
+                    url: '/translate',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(data),
+                    success: function(response) {
+                        if (response.status === 'started') {
+                            var eventSource = new EventSource('/progress');
+                            eventSource.onmessage = function(e) {
+                                if (e.data.startsWith('complete:')) {
+                                    $('#progress').hide();
+                                    $('#download-link').attr('href', '/download/' + e.data.split(':')[1]);
+                                    $('#result').show();
+                                    eventSource.close();
+                                } else {
+                                    $('#progress-text').text(e.data);
+                                }
+                            };
+                        }
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
