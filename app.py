@@ -50,10 +50,10 @@ def translate_task(file_path, start_page, end_page, target_language, translation
     chunks = split_pdf(file_path, start_page=start_page, end_page=end_page)
     translated_chunks = translate_book(chunks, translation_service, target_language=target_language, progress_queue=progress_queue)
     merged_text = merge_translated_chunks(translated_chunks)
-    output_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}_translated_{target_language}.txt"
+    output_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}_translated_{target_language}"
     output_path = os.path.join(app.config['RESULT_FOLDER'], output_filename)
-    save_result(merged_text, output_path)
-    progress_queue.put(('complete', output_filename))
+    txt_path, pdf_path = save_result(merged_text, output_path)
+    progress_queue.put(('complete', os.path.basename(pdf_path)))
 
 @app.route('/translate', methods=['POST'])
 def translate():
@@ -100,7 +100,7 @@ def download_file(filename):
     if not os.path.exists(file_path):
         app.logger.error(f"File not found: {file_path}")
         abort(404, description="File not found")
-    return send_file(file_path, as_attachment=True)
+    return send_file(file_path, as_attachment=True, download_name=secure_filename(filename))
 
 @app.errorhandler(403)
 def forbidden_error(error):
