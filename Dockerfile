@@ -7,8 +7,12 @@ WORKDIR /app
 # 将当前目录内容复制到容器的 /app 中
 COPY . /app
 
-# 安装所需的包
-RUN pip install --no-cache-dir -r requirements.txt
+# 安装系统依赖和Python包
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -r requirements.txt
 
 # 创建上传和结果文件夹
 RUN mkdir -p uploads results

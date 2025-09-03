@@ -2,9 +2,9 @@
     "services": {
       "deepseek_translate_service": {
         "service_type": "deepseek",
-        "comment": "Uses DeepSeek API with a direct API key.",
+        "comment": "Uses DeepSeek API. Set DEEPSEEK_API_KEY environment variable.",
         "openai_compatible_base_url": "https://api.deepseek.com/v1",
-        "api_key": "sk-2f229411259d46aea4f011a8da6acb06",
+        "api_key_env_var": "DEEPSEEK_API_KEY",
         "model_name": "deepseek-chat",
         "default_source_language": "Simplified Chinese",
         "default_target_language": "English",

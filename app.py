@@ -16,9 +16,11 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 RESULT_FOLDER = 'results'
 ALLOWED_EXTENSIONS = {'pdf'}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['RESULT_FOLDER'] = RESULT_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
 progress_queue = queue.Queue()
 
@@ -37,13 +39,43 @@ def index():
         if file.filename == '':
             app.logger.error("No selected file")
             return jsonify({'error': 'No selected file'})
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # 安全检查：文件类型
+        if not allowed_file(file.filename):
+            app.logger.error(f"Invalid file type: {file.filename}")
+            return jsonify({'error': 'Only PDF files are allowed'})
+        
+        # 安全检查：文件名
+        filename = secure_filename(file.filename)
+        if not filename:
+            app.logger.error("Invalid filename after sanitization")
+            return jsonify({'error': 'Invalid filename'})
+        
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        try:
             file.save(file_path)
             app.logger.info(f"File saved: {file_path}")
-            total_pages = get_pdf_page_count(file_path)
+            
+            # 检查文件是否为有效的PDF
+            try:
+                total_pages = get_pdf_page_count(file_path)
+                if total_pages == 0:
+                    os.remove(file_path)
+                    return jsonify({'error': 'Invalid PDF file'})
+            except Exception as e:
+                os.remove(file_path)
+                app.logger.error(f"Invalid PDF file: {e}")
+                return jsonify({'error': 'Invalid PDF file'})
+            
             return jsonify({'filename': filename, 'total_pages': total_pages})
+            
+        except Exception as e:
+            app.logger.error(f"File upload failed: {e}")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            return jsonify({'error': 'File upload failed'})
+    
     return render_template('index.html')
 
 def translate_task(file_path, start_page, end_page, target_language, translation_service):

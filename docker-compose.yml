@@ -1,4 +1,3 @@
-version: '3'
 services:
   web:
     build: .
@@ -9,4 +8,3 @@ services:
       - ./results:/app/results
     environment:
       - FLASK_ENV=production
-    network_mode: "host"

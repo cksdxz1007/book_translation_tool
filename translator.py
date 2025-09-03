@@ -4,9 +4,37 @@ import json # New import
 import os   # New import
 import hashlib # New import
 import re # New import for page comment regex
+import time
 from config_loader import load_service_config, get_api_key_from_config # New imports
 
 logger = logging.getLogger(__name__) # Add logger for this module
+
+# --- Retry Decorator ---
+def retry_with_backoff(max_retries=3, initial_delay=1, backoff_factor=2):
+    """
+    重试装饰器，支持指数退避
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            retries = 0
+            delay = initial_delay
+            
+            while retries <= max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    retries += 1
+                    if retries > max_retries:
+                        logger.error(f"Max retries ({max_retries}) exceeded for {func.__name__}: {e}")
+                        raise
+                    
+                    logger.warning(f"Retry {retries}/{max_retries} for {func.__name__} after error: {e}")
+                    time.sleep(delay)
+                    delay *= backoff_factor
+            
+            raise Exception(f"Failed after {max_retries} retries")
+        return wrapper
+    return decorator
 
 # --- Cache Helper Functions ---
 def _get_chunk_cache_key(chunk_text, source_language, target_language):
@@ -146,6 +174,7 @@ class TranslationService:
         # Now includes source_language in the format call
         return self.prompt_template.format(source_language=source_language, target_language=target_language, chunk=chunk)
 
+    @retry_with_backoff(max_retries=3, initial_delay=1, backoff_factor=2)
     def translate_chunk(self, chunk, target_language=None, source_language=None):
         # Use instance defaults if specific languages are not provided
         eff_target_language = target_language or self.default_target_language
@@ -159,11 +188,16 @@ class TranslationService:
                 "prompt": user_content_prompt,
                 "stream": False
             }
-            response = requests.post(self.ollama_url, json=payload)
-            if response.status_code == 200:
-                return response.json().get("response", "")
-            else:
-                raise Exception(f"Ollama translation failed ({response.status_code}): {response.text}")
+            try:
+                response = requests.post(self.ollama_url, json=payload, timeout=30)
+                if response.status_code == 200:
+                    return response.json().get("response", "")
+                else:
+                    raise Exception(f"Ollama translation failed ({response.status_code}): {response.text}")
+            except requests.exceptions.Timeout:
+                raise Exception("Ollama translation timeout after 30 seconds")
+            except requests.exceptions.ConnectionError:
+                raise Exception("Cannot connect to Ollama service")
 
         elif self.service_type in ["siliconflow", "deepseek", "openrouter", "openai_compatible_chat"]:
             if not self.openai_compatible_base_url:
@@ -195,14 +229,19 @@ class TranslationService:
                 # Add other parameters like top_p, frequency_penalty as needed, potentially from __init__
             }
 
-            response = requests.post(endpoint, headers=headers, json=payload)
-            if response.status_code == 200:
-                try:
-                    return response.json()["choices"][0]["message"]["content"].strip()
-                except (KeyError, IndexError, TypeError) as e:
-                    raise Exception(f"Failed to parse response from {self.service_type}: {e} - Response: {response.text}")
-            else:
-                raise Exception(f"{self.service_type} translation failed ({response.status_code}): {response.text}")
+            try:
+                response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+                if response.status_code == 200:
+                    try:
+                        return response.json()["choices"][0]["message"]["content"].strip()
+                    except (KeyError, IndexError, TypeError) as e:
+                        raise Exception(f"Failed to parse response from {self.service_type}: {e} - Response: {response.text}")
+                else:
+                    raise Exception(f"{self.service_type} translation failed ({response.status_code}): {response.text}")
+            except requests.exceptions.Timeout:
+                raise Exception(f"{self.service_type} translation timeout after 30 seconds")
+            except requests.exceptions.ConnectionError:
+                raise Exception(f"Cannot connect to {self.service_type} service")
         
         elif self.service_type == "third_party_completion": # Renamed from original "third_party"
             if not self.legacy_completion_api_url:
@@ -218,15 +257,20 @@ class TranslationService:
                 "prompt": user_content_prompt,
                 "max_tokens": 1000  # According to original code
             }
-            response = requests.post(self.legacy_completion_api_url, headers=headers, json=payload)
-            if response.status_code == 200:
-                try:
-                    # Original third_party used this response structure
-                    return response.json()["choices"][0]["text"].strip()
-                except (KeyError, IndexError, TypeError) as e:
-                     raise Exception(f"Failed to parse response from third_party_completion: {e} - Response: {response.text}")
-            else:
-                raise Exception(f"Third-party (completion) translation failed ({response.status_code}): {response.text}")
+            try:
+                response = requests.post(self.legacy_completion_api_url, headers=headers, json=payload, timeout=30)
+                if response.status_code == 200:
+                    try:
+                        # Original third_party used this response structure
+                        return response.json()["choices"][0]["text"].strip()
+                    except (KeyError, IndexError, TypeError) as e:
+                         raise Exception(f"Failed to parse response from third_party_completion: {e} - Response: {response.text}")
+                else:
+                    raise Exception(f"Third-party (completion) translation failed ({response.status_code}): {response.text}")
+            except requests.exceptions.Timeout:
+                raise Exception("Third-party translation timeout after 30 seconds")
+            except requests.exceptions.ConnectionError:
+                raise Exception("Cannot connect to third-party service")
         else:
             raise ValueError(f"Unsupported translation service type: {self.service_type}")
 
@@ -314,13 +358,23 @@ def translate_book(chunks, translation_service,
                 logger.info(f"{progress_message_prefix} - Translated and cached: '{chunk[:50]}...' -> '{translated_text[:50]}...'")
 
         except Exception as e:
-            error_message = f"[CHUNK {i} ERROR: {e}]"
+            error_message = f"[CHUNK {i} ERROR: {type(e).__name__}: {str(e)[:100]}]"
             logger.error(f"{progress_message_prefix} - Error translating chunk: {e}. Original chunk: '{chunk[:100]}...'")
-            translated_chunks.append(error_message) # Add error message to list
+            
+            # 提供更友好的错误信息
+            error_type = type(e).__name__
+            if "timeout" in str(e).lower() or "Timeout" in error_type:
+                user_friendly_error = f"翻译超时，请检查网络连接或服务状态"
+            elif "connection" in str(e).lower() or "Connection" in error_type:
+                user_friendly_error = f"无法连接到翻译服务，请检查服务地址"
+            else:
+                user_friendly_error = f"翻译服务错误: {error_type}"
+            
+            translated_chunks.append(f"[ERROR: {user_friendly_error}] - {chunk[:50]}...")
             # Do not cache errors, or cache them with a special marker if needed later.
             # For now, errors are not cached to allow retries on next run.
             if progress_queue:
-                progress_queue.put(f"{progress_message_prefix} - Error: {e}")
+                progress_queue.put(f"{progress_message_prefix} - {user_friendly_error}")
         
     # Save updated cache if it has changed
     if cache_file_path and cache_updated:
