@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ePub/Markdown 翻译工具</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // 检查jQuery是否加载成功
+        window.addEventListener('load', function() {
+            if (typeof jQuery === 'undefined') {
+                console.error('jQuery 未加载成功');
+                alert('jQuery 未加载成功，请检查网络连接');
+            } else {
+                console.log('jQuery 加载成功，版本:', jQuery.fn.jquery);
+            }
+        });
+    </script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .nav {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .nav a {
+            margin: 0 10px;
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .nav a.active {
+            background-color: #2980b9;
+        }
+        form, #file-info, #progress, #result {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        input[type="file"], input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #progress-text {
+            text-align: center;
+            font-weight: bold;
+        }
+        #progress-details {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/">首页</a>
+        <a href="/epub-markdown" class="active">ePub/Markdown 翻译</a>
+        <a href="/pdf">PDF 翻译</a>
+    </div>
+    
+    <h1>ePub/Markdown 翻译工具</h1>
+    <form id="upload-form" enctype="multipart/form-data">
+        <div id="drop-area" style="border: 2px dashed #3498db; border-radius: 8px; padding: 40px; text-align: center; margin-bottom: 20px; background-color: #f8f9fa; transition: all 0.3s ease;">
+            <div id="drop-content">
+                <div style="font-size: 48px; color: #3498db; margin-bottom: 10px;">📚</div>
+                <p style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">拖放ePub/Markdown文件到此处</p>
+                <p style="color: #666; margin-bottom: 20px;">支持格式: .epub, .md, .markdown, .txt</p>
+                <input type="file" name="file" accept=".epub,.md,.markdown,.txt" id="file-input" style="display: none;">
+                <button type="button" id="browse-btn" style="background-color: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px;">选择文件</button>
+            </div>
+            <div id="file-info-drop" style="display: none;">
+                <div style="font-size: 24px; color: #27ae60; margin-bottom: 10px;">✓</div>
+                <p style="font-weight: bold; margin-bottom: 5px;">文件已选择</p>
+                <p id="selected-filename" style="color: #666;"></p>
+                <button type="submit" style="background-color: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px;">上传文件</button>
+            </div>
+        </div>
+    </form>
+    <div id="file-info" style="display: none;">
+        <p>文件名: <span id="filename"></span></p>
+        <p>文件类型: <span id="file-type"></span></p>
+        <label for="target-language">目标语言:</label>
+        <input type="text" id="target-language" value="中文">
+        
+        <label for="service-select">翻译服务:</label>
+        <select id="service-select">
+            <option value="">加载中...</option>
+        </select>
+        
+        <div id="ollama-config" style="display: none;">
+            <label for="ollama-url">Ollama URL:</label>
+            <input type="text" id="ollama-url" value="http://localhost:11434/api/generate">
+            <label for="ollama-model">Ollama 模型名称:</label>
+            <input type="text" id="ollama-model" value="qwen2.5:7b">
+        </div>
+        
+        <button id="translate-btn">开始翻译</button>
+        <button id="abort-btn" style="display: none; background-color: #e74c3c; margin-left: 10px;">中止翻译</button>
+    </div>
+    <div id="progress" style="display: none;">
+        <p id="progress-text">翻译准备中...</p>
+        <div id="file-info-details" style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+            <p><strong>文件信息:</strong></p>
+            <p>文件名: <span id="detail-filename"></span></p>
+            <p>文件类型: <span id="detail-file-type"></span></p>
+            <p>文件大小: <span id="detail-file-size"></span></p>
+        </div>
+        <div style="margin-bottom: 10px; font-weight: bold; color: #2c3e50;">翻译进度日志:</div>
+        <div id="progress-details" style="max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; border: 1px solid #e9ecef; font-family: monospace; font-size: 13px;"></div>
+    </div>
+    <div id="result" style="display: none;">
+        <p>翻译完成。<a id="download-link" href="#">下载结果</a></p>
+    </div>
+    <div id="error" style="display: none; background-color: #fee; padding: 15px; border-radius: 8px; border: 1px solid #fcc; margin-top: 20px;">
+        <p style="color: #c33; font-weight: bold; margin: 0;">翻译失败: <span id="error-message"></span></p>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            console.log('DOM ready, jQuery version:', $.fn.jquery);
+            
+            // 拖放上传功能
+            const dropArea = document.getElementById('drop-area');
+            const fileInput = document.getElementById('file-input');
+            const browseBtn = document.getElementById('browse-btn');
+            const dropContent = document.getElementById('drop-content');
+            const fileInfoDrop = document.getElementById('file-info-drop');
+            const selectedFilename = document.getElementById('selected-filename');
+
+            // 防止默认拖放行为
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            // 高亮拖放区域
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, unhighlight, false);
+            });
+
+            // 处理文件放置
+            dropArea.addEventListener('drop', handleDrop, false);
+
+            // 点击浏览按钮
+            browseBtn.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            // 文件选择变化
+            fileInput.addEventListener('change', handleFileSelect);
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            function highlight() {
+                dropArea.style.borderColor = '#27ae60';
+                dropArea.style.backgroundColor = '#e8f5e8';
+            }
+
+            function unhighlight() {
+                dropArea.style.borderColor = '#3498db';
+                dropArea.style.backgroundColor = '#f8f9fa';
+            }
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                handleFiles(files);
+            }
+
+            function handleFileSelect(e) {
+                const files = e.target.files;
+                handleFiles(files);
+            }
+
+            function handleFiles(files) {
+                if (files.length > 0) {
+                    const file = files[0];
+                    const allowedTypes = [
+                        'application/epub+zip',
+                        'text/markdown',
+                        'text/plain',
+                        'application/octet-stream' // 对于某些文件类型
+                    ];
+                    
+                    const allowedExtensions = ['.epub', '.md', '.markdown', '.txt'];
+                    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+                    
+                    if (!allowedExtensions.includes(fileExtension) && !allowedTypes.includes(file.type)) {
+                        alert('请选择支持的格式: .epub, .md, .markdown, .txt');
+                        return;
+                    }
+                    
+                    // 显示文件信息
+                    selectedFilename.textContent = file.name;
+                    dropContent.style.display = 'none';
+                    fileInfoDrop.style.display = 'block';
+                    
+                    // 设置文件输入
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    fileInput.files = dataTransfer.files;
+                }
+            }
+
+            // 上传表单提交
+            $(document).on('submit', '#upload-form', function(e) {
+                e.preventDefault();
+                
+                if (!fileInput.files.length) {
+                    alert('请选择一个文件');
+                    return;
+                }
+                
+                var formData = new FormData(this);
+                var file = fileInput.files[0];
+                
+                console.log('开始上传文件:', file.name);
+                $('#detail-file-size').text(formatFileSize(file.size));
+                
+                // 显示上传中状态
+                var uploadBtn = $(this).find('button[type="submit"]');
+                var originalText = uploadBtn.text();
+                uploadBtn.text('上传中...').prop('disabled', true);
+                
+                $.ajax({
+                    url: '/epub-markdown',
+                    type: 'POST',
+                    data: formData,
+                    contentType: false,
+                    processData: false,
+                    success: function(response) {
+                        console.log('上传成功:', response);
+                        $('#filename').text(response.filename);
+                        $('#file-type').text(response.file_type);
+                        $('#detail-filename').text(response.filename);
+                        $('#detail-file-type').text(response.file_type);
+                        $('#file-info').show();
+                        currentFileUploaded = true;
+                        
+                        // 重置拖放区域
+                        dropContent.style.display = 'block';
+                        fileInfoDrop.style.display = 'none';
+                        
+                        // 重置后端进度状态
+                        $.post('/reset-progress');
+                        
+                        // 恢复按钮状态
+                        uploadBtn.text(originalText).prop('disabled', false);
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('上传失败:', xhr.responseText);
+                        var errorMsg = '上传失败';
+                        try {
+                            var response = JSON.parse(xhr.responseText);
+                            errorMsg = response.error || errorMsg;
+                        } catch(e) {
+                            errorMsg = '上传失败: ' + error;
+                        }
+                        alert(errorMsg);
+                        
+                        // 恢复按钮状态
+                        uploadBtn.text(originalText).prop('disabled', false);
+                    }
+                });
+            });
+            
+            // 跟踪当前是否有文件上传
+            var currentFileUploaded = false;
+            // Load available translation services
+            $.get('/services', function(services) {
+                var serviceSelect = $('#service-select');
+                serviceSelect.empty();
+                
+                if (Object.keys(services).length === 0) {
+                    serviceSelect.append('<option value="">无可用服务</option>');
+                } else {
+                    for (var name in services) {
+                        var service = services[name];
+                        var displayName = name + ' (' + service.service_type + ')';
+                        if (service.model_name) {
+                            displayName += ' - ' + service.model_name;
+                        }
+                        serviceSelect.append('<option value="' + name + '">' + displayName + '</option>');
+                    }
+                }
+                
+                // Show/hide ollama config based on selection
+                serviceSelect.change(function() {
+                    var selectedService = services[$(this).val()];
+                    if (selectedService && selectedService.service_type === 'ollama') {
+                        $('#ollama-config').show();
+                    } else {
+                        $('#ollama-config').hide();
+                    }
+                });
+            }).fail(function() {
+                $('#service-select').html('<option value="">加载服务失败</option>');
+            });
+            
+
+            $('#translate-btn').click(function() {
+                var data = {
+                    filename: $('#filename').text(),
+                    target_language: $('#target-language').val(),
+                    service_name: $('#service-select').val(),
+                    ollama_url: $('#ollama-url').val(),
+                    ollama_model: $('#ollama-model').val()
+                };
+                $('#progress').show();
+                $('#translate-btn').hide();
+                $('#abort-btn').show();
+                $.ajax({
+                    url: '/translate-epub-markdown',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(data),
+                    success: function(response) {
+                        if (response.status === 'started') {
+                            connectToProgressStream();
+                        }
+                    }
+                });
+            });
+
+            $('#abort-btn').click(function() {
+                if (confirm('确定要中止当前翻译吗？已翻译的内容将不会保存。')) {
+                    $.post('/abort-translation', function(response) {
+                        if (response.status === 'aborted') {
+                            $('#progress-text').text('翻译已中止');
+                            $('#progress-details').append('<span style="color: #e74c3c;">[用户中止] 翻译已被用户中止</span><br>');
+                            $('#translate-btn').show();
+                            $('#abort-btn').hide();
+                            
+                            // 3秒后隐藏进度区域
+                            setTimeout(function() {
+                                $('#progress').hide();
+                            }, 3000);
+                        }
+                    }).fail(function() {
+                        alert('中止请求失败，请重试');
+                    });
+                }
+            });
+            
+            // 页面加载时检查是否有进行中的翻译，并自动连接
+            function checkExistingProgress() {
+                $.get('/progress-status', function(status) {
+                    // 只有在有当前文件上传或者翻译正在进行中时才显示进度
+                    // 对于完成状态，只有当有当前文件上传时才显示（避免显示历史完成状态）
+                    var shouldShowProgress = status.status === 'in_progress' || 
+                                           (currentFileUploaded && (status.status === 'complete' || status.status === 'error'));
+                    
+                    if (shouldShowProgress) {
+                        $('#progress').show();
+                        
+                        // 显示已有的进度消息
+                        if (status.messages && status.messages.length > 0) {
+                            if (status.status === 'complete') {
+                                // 只有在有当前文件上传时才显示完成状态
+                                if (currentFileUploaded) {
+                                    $('#progress-text').text('翻译完成！');
+                                    $('#progress-details').hide();
+                                    setTimeout(function() {
+                                        $('#progress').hide();
+                                        $('#download-link').attr('href', '/download/' + status.result_file);
+                                        $('#result').show();
+                                    }, 1000);
+                                } else {
+                                    // 没有当前文件，隐藏完成状态
+                                    $('#progress').hide();
+                                }
+                            } else if (status.status === 'error') {
+                                // 只有在有当前文件上传时才显示错误状态
+                                if (currentFileUploaded) {
+                                    $('#progress-text').text('翻译失败！');
+                                    $('#progress-details').hide();
+                                    $('#error-message').text(status.error_message);
+                                    $('#error').show();
+                                } else {
+                                    // 没有当前文件，隐藏错误状态
+                                    $('#progress').hide();
+                                }
+                            } else {
+                                // 进行中状态，总是显示
+                                $('#progress-text').text('翻译进行中...');
+                                $('#progress-details').html('');
+                                
+                                // 添加所有历史消息
+                                status.messages.forEach(function(message) {
+                                    var timestamp = new Date().toLocaleTimeString();
+                                    var formattedMessage = '<span style="color: #666; font-size: 12px;">[' + timestamp + ']</span> ' + message;
+                                    $('#progress-details').append(formattedMessage + '<br>');
+                                });
+                                
+                                // 自动滚动到最新消息（底部）
+                                var progressDiv = $('#progress-details')[0];
+                                progressDiv.scrollTop = progressDiv.scrollHeight;
+                            }
+                        }
+                        
+                        // 只有进行中的翻译才需要连接SSE
+                        if (status.status === 'in_progress') {
+                            connectToProgressStream();
+                        }
+                    }
+                }).fail(function() {
+                    console.log('No existing progress found');
+                });
+            }
+            
+            // 连接进度流
+            function connectToProgressStream() {
+                console.log('Connecting to progress stream...');
+                var eventSource = new EventSource('/progress');
+                eventSource.onerror = function(e) {
+                    console.error('SSE connection error:', e);
+                    console.log('EventSource readyState:', eventSource.readyState);
+                };
+                eventSource.onopen = function(e) {
+                    console.log('SSE connection opened');
+                };
+                eventSource.onmessage = function(e) {
+                    console.log('Received SSE message:', e.data);
+                    if (e.data.startsWith('complete:')) {
+                        $('#progress-text').text('翻译完成！');
+                        $('#progress-details').hide();
+                        setTimeout(function() {
+                            $('#progress').hide();
+                            $('#download-link').attr('href', '/download/' + e.data.split(':')[1]);
+                            $('#result').show();
+                        }, 1000);
+                        eventSource.close();
+                    } else if (e.data.startsWith('error:')) {
+                        $('#progress-text').text('翻译失败！');
+                        $('#progress-details').hide();
+                        $('#error-message').text(e.data.split(':')[1]);
+                        $('#error').show();
+                        $('#translate-btn').show();
+                        $('#abort-btn').hide();
+                        eventSource.close();
+                    } else if (e.data.startsWith('aborted:')) {
+                        $('#progress-text').text('翻译已中止');
+                        $('#progress-details').append('<span style="color: #e74c3c;">' + e.data.split(':')[1] + '</span><br>');
+                        $('#translate-btn').show();
+                        $('#abort-btn').hide();
+                        eventSource.close();
+                    } else {
+                        // 显示详细的翻译进度信息
+                        $('#progress-text').text('翻译进行中...');
+                        
+                        // 添加时间戳和更好的格式化
+                        var timestamp = new Date().toLocaleTimeString();
+                        var formattedMessage = '<span style="color: #666; font-size: 12px;">[' + timestamp + ']</span> ' + e.data;
+                        
+                        $('#progress-details').append(formattedMessage + '<br>');
+                        
+                        // 自动滚动到最新消息（底部）
+                        var progressDiv = $('#progress-details')[0];
+                        progressDiv.scrollTop = progressDiv.scrollHeight;
+                        
+                        // 限制显示的行数，保留更多历史
+                        var lines = $('#progress-details').html().split('<br>');
+                        if (lines.length > 50) {
+                            $('#progress-details').html(lines.slice(-50).join('<br>'));
+                        }
+                    }
+                };
+            }
+            
+            // 页面加载时检查现有进度
+            checkExistingProgress();
+            
+            // 文件大小格式化函数
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        });
+    </script>
+</body>
+</html>

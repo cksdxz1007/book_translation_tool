@@ -1,33 +1,98 @@
 # Python
-   __pycache__/
-   *.py[cod]
-   *.so
+__pycache__/
+*.py[cod]
+*.so
+*.pyo
+*.pyd
+.Python
 
-   # Virtual Environment
-   venv/
-   env/
-   .env
+# Virtual Environment
+venv/
+env/
+.venv/
+ENV/
 
-   # Flask
-   instance/
-   .webassets-cache
+# Environment variables
+.env
+.env.local
+.env.*.local
 
-   # Logs
-   *.log
+# Flask
+instance/
+.webassets-cache
 
-   # Temporary files
-   uploads/
-   results/
+# Logs
+*.log
+app.log
+flask*.log
+nohup.out
 
-   # OS generated files
-   .DS_Store
-   .DS_Store?
-   ._*
-   .Spotlight-V100
-   .Trashes
-   ehthumbs.db
-   Thumbs.db
+# Configuration files (exclude production configs)
+services.json
+babeldoc.toml
 
-   # IDE specific files
-   .vscode/
-   .idea/
+# Database files
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Key files
+keys/
+
+# Temporary files
+uploads/
+results/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Test files
+test_*.py
+*_test.py
+
+# Cache directories
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Package files
+*.egg-info/
+dist/
+build/
+
+# Jupyter notebooks
+*.ipynb_checkpoints/
+
+# Project specific files
+*.pdf
+*.epub
+*.docx
+*.doc
+
+# Debug and test output files
+debug_*.md
+debug_*.py
+TEST_REPORT.md
+manual_test.py
+check_translation_result.py
+
+# Backup directories
+old_config_backup_*/

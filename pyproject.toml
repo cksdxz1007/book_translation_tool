@@ -1,0 +1,47 @@
+[project]
+name = "book-translation-tool"
+version = "0.1.0"
+description = "A tool for translating books from various formats"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+dependencies = [
+    "blinker==1.8.2",
+    "brotli==1.1.0",
+    "beautifulsoup4==4.12.3",
+    "certifi==2024.7.4",
+    "charset-normalizer==3.3.2",
+    "click==8.1.7",
+    "defusedxml==0.7.1",
+    "Flask==3.0.3",
+    "fonttools==4.54.1",
+    "fpdf2==2.8.1",
+    "idna==3.7",
+    "itsdangerous==2.2.0",
+    "Jinja2==3.1.4",
+    "lxml==5.3.0",
+    "markdown==3.7",
+    "MarkupSafe==2.1.5",
+    "openai==1.51.0",
+    "pillow==10.4.0",
+    "PyPDF2==3.0.1",
+    "PySocks==1.7.1",
+    "python-docx==1.1.2",
+    "requests==2.32.3",
+    "setuptools==75.1.0",
+    "urllib3==2.2.2",
+    "Werkzeug==3.0.4",
+    "wheel==0.44.0",
+    "PyMuPDF==1.24.9",
+    "mdformat==0.7.17",
+    "mdformat-gfm==0.3.5",
+    "mdformat-tables==0.4.1",
+    "ebooklib==0.18",
+]
+
+[build-system]
+requires = ["uv"]
+build-backend = "uv.buildapi"

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档翻译工具</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .file-type-selection {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .file-type-btn {
+            display: inline-block;
+            margin: 10px;
+            padding: 20px 30px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.3s;
+            min-width: 200px;
+        }
+        .file-type-btn:hover {
+            background-color: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .file-type-btn.epub {
+            background-color: #27ae60;
+        }
+        .file-type-btn.epub:hover {
+            background-color: #219a52;
+        }
+        .file-type-btn.pdf {
+            background-color: #e74c3c;
+        }
+        .file-type-btn.pdf:hover {
+            background-color: #c0392b;
+        }
+        .description {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .instructions {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 30px;
+        }
+        .instructions h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        .instructions ul {
+            text-align: left;
+            margin-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>文档翻译工具</h1>
+    
+    <div class="file-type-selection">
+        <h2>选择要翻译的文件类型</h2>
+        
+        <a href="/epub-markdown" class="file-type-btn epub">
+            ePub/Markdown 翻译
+            <div class="description">支持 .epub, .md, .markdown, .txt 文件</div>
+        </a>
+        
+        <a href="/pdf" class="file-type-btn pdf">
+            PDF 翻译
+            <div class="description">支持 .pdf 文件</div>
+        </a>
+    </div>
+
+    <div class="instructions">
+        <h2>使用说明</h2>
+        <ul>
+            <li><strong>推荐使用 ePub/Markdown 翻译</strong> - 处理更快，支持更多格式</li>
+            <li>PDF 翻译需要处理页面布局，可能较慢</li>
+            <li>支持多种翻译服务（DeepSeek、Ollama等）</li>
+            <li>翻译结果可下载为文本文件</li>
+        </ul>
+    </div>
+</body>
+</html>

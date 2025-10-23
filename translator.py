@@ -5,9 +5,52 @@ import os   # New import
 import hashlib # New import
 import re # New import for page comment regex
 import time
-from config_loader import load_service_config, get_api_key_from_config # New imports
+from config.manager import ConfigManager # 使用新配置系统
 
 logger = logging.getLogger(__name__) # Add logger for this module
+
+# 全局配置管理器
+config_manager = ConfigManager('data/config.db', 'data/keys')
+
+def get_translation_service():
+    """获取翻译服务配置，处理无服务的情况"""
+    try:
+        default_service = config_manager.get_default_service()
+        if not default_service:
+            logger.error("未找到可用的翻译服务配置")
+            raise ValueError("未配置翻译服务。请访问 /admin 添加翻译服务配置。")
+        
+        if not default_service.get('api_key') and default_service['service_type'] not in ['ollama']:
+            logger.error(f"服务 {default_service['name']} 缺少API密钥")
+            raise ValueError(f"翻译服务 '{default_service['name']}' 未配置API密钥。")
+        
+        return default_service
+    except Exception as e:
+        logger.error(f"获取翻译服务配置失败: {e}")
+        raise
+
+def _clean_translator_notes(text):
+    """Remove translator notes and explanatory text that LLMs sometimes add"""
+    if not text:
+        return text
+    
+    # Remove Chinese translator notes like （注：...）
+    text = re.sub(r'（注：[^）]*）', '', text)
+    text = re.sub(r'\(注：[^)]*\)', '', text)
+    
+    # Remove English translator notes
+    text = re.sub(r'\(Note:[^)]*\)', '', text)
+    text = re.sub(r'\[Note:[^\]]*\]', '', text)
+    
+    # Remove common translator explanations
+    text = re.sub(r'根据翻译准则[^。]*。', '', text)
+    text = re.sub(r'由于原文[^。]*。', '', text)
+    
+    # Clean up extra whitespace
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+    text = text.strip()
+    
+    return text
 
 # --- Retry Decorator ---
 def retry_with_backoff(max_retries=3, initial_delay=1, backoff_factor=2):
@@ -96,28 +139,29 @@ class TranslationService:
         effective_prompt_template = custom_prompt_template
 
         if service_name_from_config:
-            all_configs = config_data_for_testing if config_data_for_testing else load_service_config()
-            
-            if not all_configs or "services" not in all_configs or \
-               service_name_from_config not in all_configs["services"]:
-                error_msg = f"Service '{service_name_from_config}' not found in configuration or configuration failed to load."
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-            
-            service_config = all_configs["services"][service_name_from_config]
-            
-            self.service_type = service_config.get('service_type')
-            self.model_name = service_config.get('model_name')
-            self.api_key = get_api_key_from_config(service_config) # Handles direct key or env var
-            
-            self.ollama_url = service_config.get('ollama_url')
-            self.openai_compatible_base_url = service_config.get('openai_compatible_base_url')
-            # Check for 'legacy_completion_api_url' first, then 'api_url' for backward compatibility in config
-            self.legacy_completion_api_url = service_config.get('legacy_completion_api_url', service_config.get('api_url'))
-            # Override defaults from config if present
-            self.default_source_language = service_config.get('default_source_language', self.default_source_language)
-            self.default_target_language = service_config.get('default_target_language', self.default_target_language)
-            effective_prompt_template = service_config.get('custom_prompt_template', custom_prompt_template) # Config overrides direct param
+            # 使用新的SQLite配置系统
+            try:
+                service_config = config_manager.get_service_by_name(service_name_from_config)
+                if not service_config:
+                    error_msg = f"Service '{service_name_from_config}' not found in configuration."
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                self.service_type = service_config.get('service_type')
+                self.model_name = service_config.get('model_name')
+                self.api_key = service_config.get('api_key')
+                
+                self.ollama_url = service_config.get('ollama_url')
+                self.openai_compatible_base_url = service_config.get('openai_compatible_base_url', service_config.get('base_url'))
+                # Check for 'legacy_completion_api_url' first, then 'api_url' for backward compatibility in config
+                self.legacy_completion_api_url = service_config.get('legacy_completion_api_url', service_config.get('api_url'))
+                # Override defaults from config if present
+                self.default_source_language = service_config.get('default_source_language', self.default_source_language)
+                self.default_target_language = service_config.get('default_target_language', self.default_target_language)
+                effective_prompt_template = service_config.get('custom_prompt_template', custom_prompt_template) # Config overrides direct param
+            except Exception as e:
+                logger.error(f"Error loading service configuration for '{service_name_from_config}': {e}")
+                raise
 
             logger.info(f"TranslationService initialized using config: '{service_name_from_config}'")
 
@@ -139,10 +183,13 @@ class TranslationService:
         # Updated default prompt template to include source language and Markdown instructions
         self.prompt_template = effective_prompt_template or \
                                ("Translate the following Markdown text from {source_language} to {target_language}.\n"
-                                "ONLY return the translated text, ensuring it is also valid Markdown.\n"
-                                "DO NOT add any introductory phrases, explanations, or any text not present in the translated original.\n"
-                                "Preserve all original Markdown formatting and structure precisely.\n"
-                                "Only translate the textual content. Do not alter or translate Markdown tags (e.g., #, *, **, ```, <!-- Page X -->).\n\n"
+                                "CRITICAL RULES:\n"
+                                "1. ONLY return the translated text - no explanations, notes, or commentary\n"
+                                "2. DO NOT add translator notes like '（注：...）' or any explanatory text\n"
+                                "3. DO NOT explain translation decisions or reasoning\n"
+                                "4. Follow strict book translation standards - translate content only\n"
+                                "5. Preserve all original Markdown formatting exactly\n"
+                                "6. If source and target languages are the same, return original text unchanged\n\n"
                                 "Original Markdown:\n```{chunk}```")
 
         # Basic Validations
@@ -191,7 +238,8 @@ class TranslationService:
             try:
                 response = requests.post(self.ollama_url, json=payload, timeout=30)
                 if response.status_code == 200:
-                    return response.json().get("response", "")
+                    result = response.json().get("response", "")
+                    return _clean_translator_notes(result)
                 else:
                     raise Exception(f"Ollama translation failed ({response.status_code}): {response.text}")
             except requests.exceptions.Timeout:
@@ -233,7 +281,8 @@ class TranslationService:
                 response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
                 if response.status_code == 200:
                     try:
-                        return response.json()["choices"][0]["message"]["content"].strip()
+                        result = response.json()["choices"][0]["message"]["content"].strip()
+                        return _clean_translator_notes(result)
                     except (KeyError, IndexError, TypeError) as e:
                         raise Exception(f"Failed to parse response from {self.service_type}: {e} - Response: {response.text}")
                 else:
@@ -262,7 +311,8 @@ class TranslationService:
                 if response.status_code == 200:
                     try:
                         # Original third_party used this response structure
-                        return response.json()["choices"][0]["text"].strip()
+                        result = response.json()["choices"][0]["text"].strip()
+                        return _clean_translator_notes(result)
                     except (KeyError, IndexError, TypeError) as e:
                          raise Exception(f"Failed to parse response from third_party_completion: {e} - Response: {response.text}")
                 else:
@@ -274,9 +324,86 @@ class TranslationService:
         else:
             raise ValueError(f"Unsupported translation service type: {self.service_type}")
 
+    def test_connection(self):
+        """
+        测试翻译服务连接是否正常
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        try:
+            # 使用一个简单的测试文本来验证服务连接
+            test_text = "Hello, this is a connection test."
+
+            if self.service_type == "ollama":
+                # 测试Ollama连接
+                payload = {
+                    "model": self.model_name or "qwen2.5:7b",
+                    "prompt": f"Translate this test sentence: {test_text}",
+                    "stream": False
+                }
+                response = requests.post(self.ollama_url, json=payload, timeout=10)
+                if response.status_code == 200:
+                    return True, "Ollama服务连接正常"
+                else:
+                    return False, f"Ollama服务连接失败: {response.status_code} - {response.text}"
+
+            elif self.service_type in ["siliconflow", "deepseek", "openrouter", "openai_compatible_chat"]:
+                # 测试OpenAI兼容API连接
+                endpoint = f"{self.openai_compatible_base_url.rstrip('/')}/chat/completions"
+                headers = {"Authorization": f"Bearer {self.api_key}"}
+
+                messages = [
+                    {"role": "user", "content": f"Translate this test sentence: {test_text}"}
+                ]
+
+                payload = {
+                    "model": self.model_name,
+                    "messages": messages,
+                    "max_tokens": 50,
+                    "temperature": 0.7,
+                    "stream": False
+                }
+
+                response = requests.post(endpoint, headers=headers, json=payload, timeout=10)
+                if response.status_code == 200:
+                    return True, f"{self.service_type}服务连接正常"
+                elif response.status_code == 401:
+                    return False, f"API认证失败 (401): 请检查API密钥是否正确"
+                elif response.status_code == 429:
+                    return False, f"请求频率限制 (429): 请稍后重试"
+                else:
+                    return False, f"服务连接失败 ({response.status_code}): {response.text[:200]}"
+
+            elif self.service_type == "third_party_completion":
+                # 测试第三方完成API连接
+                headers = {"Authorization": f"Bearer {self.api_key}"}
+                payload = {
+                    "model": self.model_name,
+                    "prompt": f"Translate this test sentence: {test_text}",
+                    "max_tokens": 50
+                }
+
+                response = requests.post(self.legacy_completion_api_url, headers=headers, json=payload, timeout=10)
+                if response.status_code == 200:
+                    return True, "第三方服务连接正常"
+                else:
+                    return False, f"第三方服务连接失败 ({response.status_code}): {response.text[:200]}"
+
+            else:
+                return False, f"不支持的服务类型: {self.service_type}"
+
+        except requests.exceptions.Timeout:
+            return False, "连接超时：服务响应时间过长"
+        except requests.exceptions.ConnectionError:
+            return False, "连接错误：无法连接到服务"
+        except Exception as e:
+            return False, f"测试连接时发生错误: {str(e)}"
+
 def translate_book(chunks, translation_service, 
                    target_language=None, source_language=None, progress_queue=None,
-                   cache_file_path=None, force_translate=False, original_pdf_filename="unknown.pdf"):
+                   cache_file_path=None, force_translate=False, original_pdf_filename="unknown.pdf",
+                   should_abort_check=None):
     translated_chunks = []
     total_chunks = len(chunks)
     
@@ -297,6 +424,20 @@ def translate_book(chunks, translation_service,
     page_comment_pattern = r"^<!-- Page \d+ -->$" # Regex to identify page comments
 
     for i, chunk in enumerate(chunks, 1):
+        # 检查是否应该中止翻译
+        if should_abort_check:
+            abort_status = should_abort_check()
+            logger.debug(f"中止检查: 块 {i}/{total_chunks}, 中止状态: {abort_status}")
+            if abort_status:
+                logger.warning("翻译被用户中止")
+                if progress_queue:
+                    progress_queue.put(('progress', "用户中止了翻译任务"))
+                # 返回已翻译的部分和剩余未翻译的原文
+                remaining_chunks = chunks[i-1:]  # 当前及后续未翻译的块
+                # 将未翻译的部分保持原样
+                translated_chunks.extend(remaining_chunks)
+                break
+            
         progress_message_prefix = f"翻译进度: {i}/{total_chunks} ({i/total_chunks*100:.2f}%)"
         translated_text = None # Renamed from 'translated' to avoid confusion
         cache_key = ""
@@ -316,7 +457,7 @@ def translate_book(chunks, translation_service,
                     cache_updated = True
 
             if progress_queue:
-                progress_queue.put(f"{progress_message_prefix} - Page comment, skipped & preserved.")
+                progress_queue.put(('progress', f"{progress_message_prefix} - Page comment, skipped & preserved."))
             continue # Move to the next chunk
 
         # If not a page comment, proceed with normal caching and translation logic
@@ -327,7 +468,7 @@ def translate_book(chunks, translation_service,
                 logger.info(f"{progress_message_prefix} - Found in cache: '{chunk[:50]}...' -> '{cached_translation[:50]}...'")
                 translated_chunks.append(cached_translation)
                 if progress_queue:
-                    progress_queue.put(f"{progress_message_prefix} - Loaded from cache.")
+                    progress_queue.put(('progress', f"{progress_message_prefix} - Loaded from cache."))
                 continue # Move to the next chunk
             elif force_translate:
                 logger.info(f"{progress_message_prefix} - Force translate enabled, ignoring cache for reading for: '{chunk[:50]}...'")
@@ -336,7 +477,7 @@ def translate_book(chunks, translation_service,
         try:
             logger.info(f"{progress_message_prefix} - Translating: '{chunk[:50]}...'")
             if progress_queue:
-                progress_queue.put(f"{progress_message_prefix} - Translating...")
+                progress_queue.put(('progress', f"{progress_message_prefix} - Translating..."))
             
             translated_text = translation_service.translate_chunk(
                 chunk,
@@ -374,7 +515,7 @@ def translate_book(chunks, translation_service,
             # Do not cache errors, or cache them with a special marker if needed later.
             # For now, errors are not cached to allow retries on next run.
             if progress_queue:
-                progress_queue.put(f"{progress_message_prefix} - {user_friendly_error}")
+                progress_queue.put(('progress', f"{progress_message_prefix} - {user_friendly_error}"))
         
     # Save updated cache if it has changed
     if cache_file_path and cache_updated:

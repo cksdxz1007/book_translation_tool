@@ -4,12 +4,18 @@ import markdown
 from bs4 import BeautifulSoup
 import re # Import re for text cleaning
 
-# macOS System Font we will try to use for broad Unicode support
-# Arial Unicode MS is a good candidate if available.
-MACOS_UNICODE_FONT_NAME = "ArialUnicodeMS"
-MACOS_UNICODE_FONT_PATH = "/Library/Fonts/Arial Unicode.ttf" # Common path if installed
+# Unicode fonts available in Debian/Ubuntu
+UNICODE_FONTS = [
+    # Noto CJK fonts for Chinese/Japanese/Korean support
+    ("NotoSansCJK-Regular", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+    ("NotoSerifCJK-Regular", "/usr/share/fonts/truetype/noto/NotoSerifCJK-Regular.ttc"),
+    # Fallback fonts
+    ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ("FreeSans", "/usr/share/fonts/truetype/freefont/FreeSans.ttf"),
+    ("LiberationSans", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf")
+]
 
-# Fallback font if the macOS Unicode font cannot be loaded
+# Fallback font if no Unicode font can be loaded
 FALLBACK_FONT = "Helvetica"
 
 def merge_translated_chunks(translated_chunks):
@@ -93,38 +99,33 @@ def save_as_pdf(html_content, filename):
         font_styles_loaded = {'R': False, 'B': False, 'I': False}
 
         def add_system_unicode_font(self):
-            """Attempts to load Arial Unicode MS from the system. Sets self.current_font_name."""
-            try:
-                if os.path.exists(MACOS_UNICODE_FONT_PATH):
-                    self.add_font(MACOS_UNICODE_FONT_NAME, "", MACOS_UNICODE_FONT_PATH, uni=True)
-                    self.font_styles_loaded['R'] = True
-                    # Register the same font file for Bold and Italic to avoid undefined font errors
-                    # This won't make it actually bold/italic if the font file doesn't support it inherently
-                    # or if FPDF doesn't synthesize it, but it prevents errors with write_html.
-                    self.add_font(MACOS_UNICODE_FONT_NAME, "B", MACOS_UNICODE_FONT_PATH, uni=True)
-                    self.font_styles_loaded['B'] = True 
-                    self.add_font(MACOS_UNICODE_FONT_NAME, "I", MACOS_UNICODE_FONT_PATH, uni=True)
-                    self.font_styles_loaded['I'] = True
+            """Attempts to load a Unicode font from available system fonts. Sets self.current_font_name."""
+            for font_name, font_path in UNICODE_FONTS:
+                try:
+                    if os.path.exists(font_path):
+                        self.add_font(font_name, "", font_path, uni=True)
+                        self.font_styles_loaded['R'] = True
+                        # Register the same font file for Bold and Italic to avoid undefined font errors
+                        self.add_font(font_name, "B", font_path, uni=True)
+                        self.font_styles_loaded['B'] = True 
+                        self.add_font(font_name, "I", font_path, uni=True)
+                        self.font_styles_loaded['I'] = True
 
-                    self.current_font_name = MACOS_UNICODE_FONT_NAME
-                    print(f"Successfully loaded system Unicode font: {MACOS_UNICODE_FONT_NAME} from {MACOS_UNICODE_FONT_PATH} (registered for R, B, I styles).")
-                    return True
-                else:
-                    print(f"警告: 系统字体文件未找到 '{MACOS_UNICODE_FONT_PATH}'.")
-                    self.current_font_name = FALLBACK_FONT
-                    # For fallback, FPDF can synthesize B/I for Helvetica
-                    self.font_styles_loaded['R'] = True 
-                    self.font_styles_loaded['B'] = True 
-                    self.font_styles_loaded['I'] = True 
-                    return False
-            except RuntimeError as e:
-                print(f"警告: 无法加载系统字体 '{MACOS_UNICODE_FONT_NAME}'. 错误: {e}. 将回退到 '{FALLBACK_FONT}'. 特殊字符可能无法在 PDF 中正确显示。")
-                self.current_font_name = FALLBACK_FONT
-                # For fallback, FPDF can synthesize B/I for Helvetica
-                self.font_styles_loaded['R'] = True 
-                self.font_styles_loaded['B'] = True 
-                self.font_styles_loaded['I'] = True 
-                return False
+                        self.current_font_name = font_name
+                        print(f"Successfully loaded Unicode font: {font_name} from {font_path}")
+                        return True
+                except RuntimeError as e:
+                    print(f"Warning: Could not load font {font_name}: {e}")
+                    continue
+            
+            # If no Unicode font found, fallback to Helvetica
+            print("Warning: No Unicode fonts found. Falling back to Helvetica. Chinese characters may not display correctly in PDF.")
+            self.current_font_name = FALLBACK_FONT
+            # For fallback, FPDF can synthesize B/I for Helvetica
+            self.font_styles_loaded['R'] = True 
+            self.font_styles_loaded['B'] = True 
+            self.font_styles_loaded['I'] = True 
+            return False
 
         def header(self):
             # Use bold style if available for the current font, else regular
