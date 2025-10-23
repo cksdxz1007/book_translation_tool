@@ -1,13 +1,72 @@
 """
 简单的管理界面路由
 """
-from flask import Blueprint, render_template_string, request, jsonify, redirect, url_for
+import os
+from functools import wraps
+from flask import Blueprint, render_template_string, request, jsonify, redirect, url_for, session
 from config.manager import ConfigManager
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 config_manager = ConfigManager('data/config.db', 'data/keys')
 
+# 从环境变量获取管理员密钥，如果没有设置则使用安全的默认值
+ADMIN_ACCESS_KEY = os.getenv('ADMIN_ACCESS_KEY', '9AD43ELSUdAgnpKyCcsNRx/6AOPfjsQ6jE8J3naY5jc=')
+
+def require_admin_auth(f):
+    """
+    管理员认证装饰器
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 检查是否已登录
+        if session.get('admin_authenticated'):
+            return f(*args, **kwargs)
+
+        # 检查URL参数中的密钥
+        access_key = request.args.get('key')
+        if access_key == ADMIN_ACCESS_KEY:
+            session['admin_authenticated'] = True
+            return f(*args, **kwargs)
+
+        # 显示登录页面
+        return render_template_string("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>管理员登录</title>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: Arial, sans-serif; margin: 40px; max-width: 400px; }
+                .login-form { border: 1px solid #ddd; padding: 30px; border-radius: 5px; }
+                .form-group { margin-bottom: 20px; }
+                label { display: block; margin-bottom: 5px; font-weight: bold; }
+                input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 3px; }
+                .btn { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+                .error { color: #dc3545; margin-top: 10px; }
+            </style>
+        </head>
+        <body>
+            <h1>🔐 管理员登录</h1>
+            <div class="login-form">
+                <form method="GET">
+                    <div class="form-group">
+                        <label for="key">访问密钥:</label>
+                        <input type="password" id="key" name="key" placeholder="请输入管理员密钥" required>
+                    </div>
+                    <button type="submit" class="btn">🔑 登录</button>
+                </form>
+                {% if error %}
+                <div class="error">{{ error }}</div>
+                {% endif %}
+            </div>
+        </body>
+        </html>
+        """, error=request.args.get('error'))
+
+    return decorated_function
+
 @admin_bp.route('/')
+@require_admin_auth
 def dashboard():
     """管理首页"""
     services = config_manager.list_services()
@@ -37,6 +96,7 @@ def dashboard():
         <div style="margin-bottom: 20px;">
             <a href="/admin/add" class="btn btn-primary">➕ 添加新服务</a>
             <a href="/" class="btn">🏠 返回主页</a>
+            <a href="/admin/logout" class="btn" style="background-color: #dc3545; color: white;">🚪 退出登录</a>
         </div>
         
         <h2>📋 服务列表 ({{ services|length }} 个)</h2>
@@ -81,6 +141,7 @@ def dashboard():
     return render_template_string(html, services=services)
 
 @admin_bp.route('/test/<service_id>')
+@require_admin_auth
 def test_service(service_id):
     """测试服务连接"""
     try:
@@ -94,6 +155,7 @@ def test_service(service_id):
         return f"<script>alert('测试出错: {str(e)}'); window.location.href='/admin';</script>"
 
 @admin_bp.route('/edit/<service_id>')
+@require_admin_auth
 def edit_service(service_id):
     """编辑服务页面"""
     try:
@@ -171,6 +233,7 @@ def edit_service(service_id):
         return f"<script>alert('加载编辑页面失败: {str(e)}'); window.location.href='/admin';</script>"
 
 @admin_bp.route('/update/<service_id>', methods=['POST'])
+@require_admin_auth
 def update_service(service_id):
     """更新服务"""
     try:
@@ -207,12 +270,14 @@ def update_service(service_id):
         return f"<script>alert('更新失败: {str(e)}'); window.history.back();</script>"
 
 @admin_bp.route('/set_default/<service_id>')
+@require_admin_auth
 def set_default(service_id):
     """设置默认服务"""
     config_manager.set_default_service(service_id)
     return redirect('/admin')
 
 @admin_bp.route('/add')
+@require_admin_auth
 def add_service():
     """添加服务页面"""
     html = """
@@ -280,6 +345,7 @@ def add_service():
     return render_template_string(html)
 
 @admin_bp.route('/create', methods=['POST'])
+@require_admin_auth
 def create_service():
     """创建服务"""
     try:
@@ -291,9 +357,15 @@ def create_service():
             'model_name': request.form['model_name'],
             'description': request.form.get('description', '')
         }
-        
+
         service_id = config_manager.create_service(config)
         return f"<script>alert('服务创建成功！ID: {service_id}'); window.location.href='/admin';</script>"
-        
+
     except Exception as e:
         return f"<script>alert('创建失败: {str(e)}'); window.history.back();</script>"
+
+@admin_bp.route('/logout')
+def logout():
+    """退出登录"""
+    session.pop('admin_authenticated', None)
+    return redirect('/admin')

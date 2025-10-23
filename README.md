@@ -61,7 +61,18 @@ git clone https://github.com/cksdxz1007/book_translation_tool.git
 cd book_translation_tool
 ```
 
-3. 部署应用
+3. 配置环境变量
+
+   ```bash
+   # 复制环境变量模板
+   cp .env.example .env
+
+   # 编辑 .env 文件，填写您的 API 密钥
+   # DEEPSEEK_API_KEY=您的DeepSeek API密钥
+   # ADMIN_ACCESS_KEY=使用 openssl rand -base64 32 生成的管理员密钥
+   ```
+
+4. 部署应用
 
    **必须使用 conda 虚拟环境 `books_venv`**
 
@@ -83,7 +94,7 @@ cd book_translation_tool
    python start_app.py
    ```
 
-4. 访问应用：
+5. 访问应用：
    ```
    http://localhost:5001
    ```
