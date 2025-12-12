@@ -1,188 +1,147 @@
-# PDF 翻译工具
+# Book Translation Tool
 
-这是一个基于 Flask 的 Web 应用程序，用于翻译 PDF 文档。支持多种翻译引擎，包括专业的 BabelDOC 和传统翻译方法。
+基于Flask的文档翻译工具，支持PDF、EPUB、Markdown等多种文档格式的翻译。
 
-## 功能特点
+## 功能特性
 
-### 🚀 双翻译引擎支持
-- **BabelDOC 引擎**: 专业 PDF 翻译，保持原始布局和格式
-- **传统引擎**: 基于文本提取的翻译方法
+- **多格式支持**: PDF、EPUB、Markdown、TXT
+- **多引擎支持**: BabelDOC（专业PDF翻译）、OpenAI兼容API、Ollama
+- **格式保持**: 保持原文格式和结构
+- **双语输出**: 支持生成双语对照文档
+- **实时进度**: 翻译进度实时追踪
+- **安全存储**: 配置信息加密存储
 
-### 📄 文件格式支持
-- PDF 文件翻译
-- ePub 电子书翻译
-- Markdown 文档翻译
-- 文本文件翻译
+## 系统要求
 
-### 🔧 翻译服务
-- 支持 Ollama 本地模型
-- 支持 OpenAI 兼容 API
-- 自定义翻译服务配置
-- 多种模型选择
+- Python >= 3.10
+- uv（推荐的包管理器）
 
-### ✨ 高级功能
-- 页面范围选择
-- 实时翻译进度显示
-- 双语对比输出（BabelDOC）
-- 术语表支持（BabelDOC）
-- 批量文件处理
-- **API服务预测试**：翻译前自动验证服务连接
-- **健壮错误处理**：友好的错误提示和快速失败机制
-- **管理员安全认证**：管理员页面访问密钥保护
+## 快速开始
 
-## BabelDOC 优势
+### 1. 安装依赖
 
-相比传统翻译方法，BabelDOC 提供：
-
-- **专业级翻译质量**: 专为科学论文和技术文档设计
-- **完美布局保持**: 保持原始 PDF 的格式、字体和结构
-- **科学公式处理**: 专门优化数学公式和符号翻译
-- **双语输出**: 可生成原文和译文对比的 PDF
-- **高精度识别**: 先进的文档布局分析技术
-
-## 安装要求
-
-- Python 3.12+
-- Flask
-- BabelDOC 0.5.16+
-- PyPDF2
-- requests
-- fpdf2
-- **必须使用 conda 虚拟环境 `books_venv`**
-
-## 安装
-
-1. 克隆仓库：
 ```bash
-git clone https://github.com/cksdxz1007/book_translation_tool.git
+# 使用uv安装依赖
+uv sync
+
+# 或者安装所有依赖（包括开发工具）
+uv sync --all-extras
 ```
 
-2. 进入项目目录：
+### 2. 启动应用
+
 ```bash
-cd book_translation_tool
+# 前台运行
+./start_uv.sh
+
+# 后台运行
+./start_uv_bg.sh
 ```
 
-3. 配置环境变量
+### 3. 访问应用
 
-   ```bash
-   # 复制环境变量模板
-   cp .env.example .env
+- 主应用: http://localhost:5001
+- 管理界面: http://localhost:5001/admin
 
-   # 编辑 .env 文件，填写您的 API 密钥
-   # DEEPSEEK_API_KEY=您的DeepSeek API密钥
-   # ADMIN_ACCESS_KEY=使用 openssl rand -base64 32 生成的管理员密钥
-   ```
-
-4. 部署应用
-
-   **必须使用 conda 虚拟环境 `books_venv`**
-
-   ```bash
-   # 激活 conda 环境
-   conda activate books_venv
-
-   # 验证环境是否正确
-   which python
-   # 应该显示: /opt/homebrew/Caskroom/miniconda/base/envs/books_venv/bin/python
-
-   # 安装依赖
-   pip install -r requirements.txt
-
-   # 安装 BabelDOC 0.5.16+
-   pip install BabelDOC==0.5.16
-
-   # 运行应用
-   python start_app.py
-   ```
-
-5. 访问应用：
-   ```
-   http://localhost:5001
-   ```
-
-## 使用说明
-
-### PDF 翻译
-
-1. **上传 PDF 文件**: 选择要翻译的 PDF 文档
-2. **选择翻译引擎**: 
-   - BabelDOC: 专业 PDF 翻译，保持原始格式
-   - 传统翻译: 基于文本提取的翻译
-3. **设置参数**:
-   - 页面范围（可选）
-   - 目标语言
-   - 翻译服务
-4. **开始翻译**: 实时查看翻译进度
-5. **下载结果**: 翻译完成后下载文件
+## 配置说明
 
 ### 翻译服务配置
 
-通过 Web 管理界面配置翻译服务：
+1. 访问管理界面 `/admin`
+2. 添加翻译服务（支持OpenAI兼容API和Ollama）
+3. 配置API密钥和服务URL
+4. 测试连接并设为默认服务
 
-1. 访问管理界面：`http://localhost:5001/admin`
-2. **输入管理员密钥**（在 `.env` 文件中配置的 `ADMIN_ACCESS_KEY`）
-3. 添加/编辑翻译服务
-4. 测试服务连接
-5. 设置默认服务
+### 环境变量
 
-**安全特性**：
-- 管理员页面受访问密钥保护
-- 会话管理，登录后无需重复输入密钥
-- 安全退出功能
-- 使用 OpenSSL 生成的安全随机密钥
-
-支持的服务类型：
-- `openai` - OpenAI兼容API (DeepSeek, SiliconFlow等)
-- `ollama` - 本地Ollama实例
-- `third_party_completion` - 第三方完成API
-
-所有敏感数据使用AES-256加密存储在SQLite数据库中。
-
-### BabelDOC 配置
-
-可以通过 `babeldoc.toml` 文件自定义 BabelDOC 设置：
-
-```toml
-[babeldoc]
-lang-out = "zh-CN"
-watermark-output-mode = "no_watermark"
-openai-model = "llama3"
-openai-base-url = "http://localhost:11434/v1"
-```
-
-## 测试
-
-运行集成测试：
+复制 `.env.example` 到 `.env` 并配置：
 
 ```bash
-python test_babeldoc_integration.py
+# Flask配置
+FLASK_ENV=development
+SECRET_KEY=your-secret-key
+
+# 翻译服务配置
+DEFAULT_TRANSLATION_SERVICE=openai
 ```
 
-## 注意事项
+## 目录结构
 
-### BabelDOC 使用
-- 确保翻译服务正在运行且配置正确
-- BabelDOC 主要针对英文到中文翻译优化
-- 首次运行会下载必要的模型文件
-- 需要较多系统资源进行文档布局分析
-- **API服务预测试**：翻译前自动验证服务连接，避免无效翻译
-- **健壮错误处理**：友好的错误提示和快速失败机制
+```
+book-translation-tool/
+├── app.py                 # 主应用
+├── admin_routes.py        # 管理界面路由
+├── translator.py          # 翻译服务抽象
+├── pdf_translator_babeldoc.py  # BabelDOC引擎
+├── pyproject.toml         # 项目配置
+├── start_uv.sh           # 前台启动脚本
+├── start_uv_bg.sh        # 后台启动脚本
+├── config/               # 配置管理
+│   ├── manager.py
+│   └── app_config.py
+├── core/                 # 核心功能模块
+│   ├── text_utils.py
+│   ├── semantic_matcher.py
+│   └── bilingual.py
+├── routes/               # 路由模块
+│   ├── api_routes.py
+│   ├── pdf_routes.py
+│   ├── markdown_routes.py
+│   └── epub_routes.py
+├── templates/            # HTML模板
+├── static/               # 静态资源
+├── data/                 # 数据目录
+│   ├── config.db        # 配置数据库
+│   └── keys/            # 加密密钥
+├── uploads/              # 上传文件
+└── results/              # 输出结果
+```
 
-### 传统翻译
-- 适用于简单的文本翻译需求
-- 输出格式为 Markdown
-- 处理速度较快，资源占用较少
+## 翻译引擎
 
-### 生产环境
-- 在生产环境中部署时，请确保适当配置安全措施
-- 上传和结果文件存储在 `uploads` 和 `results` 目录中
-- 建议定期清理临时文件
-- **管理员安全**：确保 `.env` 文件中的 `ADMIN_ACCESS_KEY` 使用强密码，不要提交到版本控制
+### 1. BabelDOC引擎
+- 专业PDF翻译
+- 保持布局和格式
+- 支持复杂文档结构
 
-## 贡献
+### 2. 格式保持引擎
+- EPUB/Markdown专用
+- 保持文档结构和元数据
+- 适合文学作品翻译
 
-欢迎提交问题和拉取请求。对于重大更改，请先开issue讨论您想要更改的内容。
+### 3. 传统文本引擎
+- 通用文本翻译
+- 简单快速
+- 适合纯文本文件
+
+## 开发指南
+
+### 添加新的翻译服务
+
+1. 在 `translator.py` 中实现新的服务类
+2. 更新配置管理器
+3. 在管理界面添加工具
+
+### 自定义模板
+
+修改 `templates/` 目录下的HTML文件。
+
+### 样式定制
+
+静态文件位于 `static/` 目录，使用Tailwind CSS。
 
 ## 许可证
 
-[MIT](https://choosealicense.com/licenses/mit/)
+MIT License
+
+## 贡献
+
+欢迎提交Issue和Pull Request！
+
+## 更新日志
+
+### v2.0.0
+- 重构项目架构，使用Blueprint
+- 增强配置管理系统
+- 添加实时进度追踪
+- 优化文件处理流程

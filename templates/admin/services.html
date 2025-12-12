@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>翻译服务管理 - 管理后台</title>
+    <link href="/static/css/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex items-center">
+                        <a href="/admin/" class="text-gray-600 hover:text-gray-900 mr-4">
+                            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                            </svg>
+                        </a>
+                        <h1 class="text-xl font-bold text-gray-800">翻译服务管理</h1>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="checkAllServices()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                            检查所有服务
+                        </button>
+                        <button onclick="showAddModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                            + 添加服务
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <!-- 服务列表 -->
+            <div class="bg-white shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">已配置的翻译服务</h3>
+                    <div id="servicesList" class="space-y-4">
+                        {% if services %}
+                            {% for service in services %}
+                            <div class="border rounded-lg p-4 {% if service.is_default %}border-green-400 bg-green-50{% else %}border-gray-200{% endif %}" data-service-id="{{ service.id }}">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex-1">
+                                        <div class="flex items-center">
+                                            <!-- Status Indicator -->
+                                            <div class="flex items-center">
+                                                <div class="w-3 h-3 rounded-full {% if service.status == 'healthy' %}bg-green-500{% elif service.status == 'unhealthy' %}bg-red-500{% else %}bg-gray-300{% endif %}"></div>
+                                                <h4 class="text-lg font-medium text-gray-900 ml-2">{{ service.name }}</h4>
+                                            </div>
+                                            {% if service.is_default %}
+                                            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">默认</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="mt-1 text-sm text-gray-500">
+                                            <p><span class="font-medium">类型:</span> {{ service.type }}</p>
+                                            <p><span class="font-medium">模型:</span> {{ service.model or '未配置' }}</p>
+                                            <p><span class="font-medium">URL:</span> {{ service.url or '未配置' }}</p>
+                                            <p><span class="font-medium">API Key:</span> {{ '已配置' if service.api_key else '未配置' }}</p>
+                                            <p><span class="font-medium">上下文长度:</span> {{ service.context_length_formatted or '未设置' }}</p>
+                                            <p><span class="font-medium">输出长度:</span> {{ service.max_output_length_formatted or '未设置' }}</p>
+                                            <p><span class="font-medium">状态:</span>
+                                                {% if service.status == 'healthy' %}
+                                                    <span class="text-green-600">正常</span>
+                                                {% elif service.status == 'unhealthy' %}
+                                                    <span class="text-red-600">异常</span>
+                                                {% else %}
+                                                    <span class="text-gray-400">未检查</span>
+                                                {% endif %}
+                                                {% if service.last_checked %}
+                                                    <span class="text-gray-400 text-xs ml-2">({{ service.last_checked }})</span>
+                                                {% endif %}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col space-y-2">
+                                        <div class="flex space-x-2">
+                                            {% if not service.is_default %}
+                                            <button onclick="setDefault({{ service.id }})" class="text-green-600 hover:text-green-800 text-sm">
+                                                设为默认
+                                            </button>
+                                            {% endif %}
+                                            <button onclick="editService({{ service.id }}, '{{ service.name }}', '{{ service.type }}', '{{ service.url or '' }}', '{{ service.model or '' }}', '{{ service.context_length_formatted or '' }}', '{{ service.max_output_length_formatted or '' }}')" class="text-indigo-600 hover:text-indigo-800 text-sm">
+                                                编辑
+                                            </button>
+                                            <button onclick="deleteService({{ service.id }}, '{{ service.name }}')" class="text-red-600 hover:text-red-800 text-sm">
+                                                删除
+                                            </button>
+                                        </div>
+                                        <button onclick="checkServiceStatus({{ service.id }})" class="text-blue-600 hover:text-blue-800 text-sm">
+                                            检查状态
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-8 text-gray-500">
+                                <p>暂无配置的翻译服务</p>
+                                <p class="mt-2 text-sm">点击右上角"添加服务"按钮添加第一个翻译服务</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务类型说明 -->
+            <div class="mt-6 bg-white shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">服务类型说明</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div class="border rounded p-3">
+                            <h4 class="font-medium text-gray-900">openai</h4>
+                            <p class="text-gray-500">OpenAI 兼容 API (OpenAI, DeepSeek, SiliconFlow 等)</p>
+                        </div>
+                        <div class="border rounded p-3">
+                            <h4 class="font-medium text-gray-900">ollama</h4>
+                            <p class="text-gray-500">本地 Ollama 服务</p>
+                        </div>
+                        <div class="border rounded p-3">
+                            <h4 class="font-medium text-gray-900">third_party_completion</h4>
+                            <p class="text-gray-500">第三方 Completion API</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 添加/编辑服务模态框 -->
+    <div id="serviceModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <h3 id="modalTitle" class="text-lg font-medium text-gray-900 mb-2">添加翻译服务</h3>
+                <p class="text-sm text-gray-600 mb-4">
+                    <span class="text-red-500 font-semibold">*</span> 为必填字段
+                </p>
+                <form id="serviceForm">
+                    <input type="hidden" id="serviceId" value="">
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- 第一列 -->
+                        <div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-gray-900 mb-1">
+                                    服务名称 <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="serviceName" required class="w-full px-3 py-2 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-gray-900 mb-1">
+                                    服务类型 <span class="text-red-500">*</span>
+                                </label>
+                                <select id="serviceType" required class="w-full px-3 py-2 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                    <option value="">请选择</option>
+                                    <option value="openai">openai</option>
+                                    <option value="ollama">ollama</option>
+                                    <option value="third_party_completion">third_party_completion</option>
+                                </select>
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-gray-900 mb-1">
+                                    API URL <span class="text-red-500">*</span>
+                                </label>
+                                <input type="url" id="serviceUrl" required placeholder="https://api.openai.com/v1" class="w-full px-3 py-2 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-gray-900 mb-1">
+                                    模型名称 <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="serviceModel" required placeholder="gpt-3.5-turbo" class="w-full px-3 py-2 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <!-- 第二列 -->
+                        <div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-gray-900 mb-1">
+                                    API Key <span class="text-red-500">*</span>
+                                </label>
+                                <input type="password" id="serviceApiKey" required placeholder="sk-..." class="w-full px-3 py-2 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                <p class="mt-1 text-xs text-gray-500">编辑时留空表示不修改</p>
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">上下文长度 <span class="text-gray-400">(可选)</span></label>
+                                <input type="text" id="contextLength" placeholder="例如：128K" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    <button type="button" onclick="setContextLength('32K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">32K</button>
+                                    <button type="button" onclick="setContextLength('64K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">64K</button>
+                                    <button type="button" onclick="setContextLength('128K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">128K</button>
+                                    <button type="button" onclick="setContextLength('256K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">256K</button>
+                                    <button type="button" onclick="setContextLength('512K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">512K</button>
+                                    <button type="button" onclick="setContextLength('1M')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">1M</button>
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">输出长度 <span class="text-gray-400">(可选)</span></label>
+                                <input type="text" id="maxOutputLength" placeholder="例如：8K" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    <button type="button" onclick="setMaxOutputLength('4K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">4K</button>
+                                    <button type="button" onclick="setMaxOutputLength('8K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">8K</button>
+                                    <button type="button" onclick="setMaxOutputLength('16K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">16K</button>
+                                    <button type="button" onclick="setMaxOutputLength('32K')" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">32K</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <div class="mb-4" id="defaultCheckboxDiv">
+                            <label class="flex items-center">
+                                <input type="checkbox" id="isDefault" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                <span class="ml-2 text-sm text-gray-700">设为默认服务</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-3 mt-6">
+                        <button type="button" onclick="hideModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">
+                            取消
+                        </button>
+                        <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md">
+                            保存
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/jquery.min.js"></script>
+    <script>
+        let isEditMode = false;
+
+        function showAddModal() {
+            isEditMode = false;
+            document.getElementById('modalTitle').textContent = '添加翻译服务';
+            document.getElementById('serviceId').value = '';
+            document.getElementById('serviceName').value = '';
+            document.getElementById('serviceType').value = '';
+            document.getElementById('serviceUrl').value = '';
+            document.getElementById('serviceModel').value = '';
+            document.getElementById('serviceApiKey').value = '';
+            document.getElementById('contextLength').value = '';
+            document.getElementById('maxOutputLength').value = '';
+            document.getElementById('isDefault').checked = false;
+            document.getElementById('defaultCheckboxDiv').style.display = 'block';
+            document.getElementById('serviceModal').classList.remove('hidden');
+        }
+
+        function editService(id, name, type, url, model, contextLength, maxOutputLength) {
+            isEditMode = true;
+            document.getElementById('modalTitle').textContent = '编辑翻译服务';
+            document.getElementById('serviceId').value = id;
+            document.getElementById('serviceName').value = name;
+            document.getElementById('serviceType').value = type;
+            document.getElementById('serviceUrl').value = url;
+            document.getElementById('serviceModel').value = model;
+            document.getElementById('serviceApiKey').value = '';
+            document.getElementById('contextLength').value = contextLength;
+            document.getElementById('maxOutputLength').value = maxOutputLength;
+            document.getElementById('defaultCheckboxDiv').style.display = 'none';
+            document.getElementById('serviceModal').classList.remove('hidden');
+        }
+
+        function hideModal() {
+            document.getElementById('serviceModal').classList.add('hidden');
+        }
+
+        function setContextLength(value) {
+            document.getElementById('contextLength').value = value;
+        }
+
+        function setMaxOutputLength(value) {
+            document.getElementById('maxOutputLength').value = value;
+        }
+
+        function setDefault(id) {
+            if (confirm('确定要将此服务设为默认吗？')) {
+                fetch(`/admin/api/services/${id}/default`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        location.reload();
+                    } else {
+                        showToast(data.message || '操作失败', 'error');
+                    }
+                })
+                .catch(error => {
+                    showToast('请求失败: ' + error, 'error');
+                });
+            }
+        }
+
+        function deleteService(id, name) {
+            if (confirm(`确定要删除服务 "${name}" 吗？此操作不可撤销。`)) {
+                fetch(`/admin/api/services/${id}`, {
+                    method: 'DELETE',
+                    headers: {'Content-Type': 'application/json'}
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        location.reload();
+                    } else {
+                        showToast(data.message || '删除失败', 'error');
+                    }
+                })
+                .catch(error => {
+                    showToast('请求失败: ' + error, 'error');
+                });
+            }
+        }
+
+        function checkServiceStatus(id) {
+            fetch(`/admin/api/services/${id}/check`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    if (data.healthy) {
+                        showToast('服务状态: 正常 - ' + data.message, 'success');
+                    } else {
+                        showToast('服务状态: 异常 - ' + data.message, 'error');
+                    }
+                    location.reload();
+                } else {
+                    showToast(data.message || '状态检查失败', 'error');
+                }
+            })
+            .catch(error => {
+                showToast('请求失败: ' + error, 'error');
+            });
+        }
+
+        function checkAllServices() {
+            fetch('/admin/api/services/check-all', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const results = data.results;
+                    let message = '所有服务状态检查完成:\n\n';
+                    results.forEach(result => {
+                        const status = result.status === 'healthy' ? '✓ 正常' : '✗ 异常';
+                        message += `${result.name}: ${status} - ${result.message}\n`;
+                    });
+                    showToast(message, 'info', 5000);
+                    location.reload();
+                } else {
+                    showToast(data.message || '批量状态检查失败', 'error');
+                }
+            })
+            .catch(error => {
+                showToast('请求失败: ' + error, 'error');
+            });
+        }
+
+        document.getElementById('serviceForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const serviceId = document.getElementById('serviceId').value;
+            const data = {
+                name: document.getElementById('serviceName').value,
+                type: document.getElementById('serviceType').value,
+                url: document.getElementById('serviceUrl').value,
+                model: document.getElementById('serviceModel').value,
+                api_key: document.getElementById('serviceApiKey').value,
+                context_length: document.getElementById('contextLength').value,
+                max_output_length: document.getElementById('maxOutputLength').value,
+                is_default: document.getElementById('isDefault').checked
+            };
+
+            const url = isEditMode ? `/admin/api/services/${serviceId}` : '/admin/api/services';
+            const method = isEditMode ? 'PUT' : 'POST';
+
+            fetch(url, {
+                method: method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    location.reload();
+                } else {
+                    showToast(data.message || '操作失败', 'error');
+                }
+            })
+            .catch(error => {
+                showToast('请求失败: ' + error, 'error');
+            });
+        });
+
+        // 点击模态框外部关闭
+        document.getElementById('serviceModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideModal();
+            }
+        });
+
+        // Toast Notification System
+        function showToast(message, type = 'info', duration = 3000) {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type} px-6 py-3 rounded-lg shadow-lg text-white font-medium`;
+            toast.textContent = message;
+
+            toastContainer.appendChild(toast);
+
+            // Trigger animation
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+
+            // Auto remove after duration
+            setTimeout(() => {
+                toast.classList.add('hide');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, duration);
+        }
+    </script>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+    <style>
+        .toast {
+            transform: translateX(400px);
+            opacity: 0;
+            transition: all 0.3s ease-in-out;
+            min-width: 300px;
+            max-width: 500px;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        .toast.hide {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+
+        .toast-success {
+            background-color: #10b981;
+        }
+
+        .toast-error {
+            background-color: #ef4444;
+        }
+
+        .toast-info {
+            background-color: #3b82f6;
+        }
+    </style>
+</body>
+</html>

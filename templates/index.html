@@ -3,375 +3,191 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF 翻译工具</title>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        h1 {
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        form, #file-info, #progress, #result {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .nav {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .nav a {
-            margin: 0 10px;
-            padding: 8px 16px;
-            background-color: #3498db;
-            color: white;
-            text-decoration: none;
-            border-radius: 4px;
-        }
-        .nav a.active {
-            background-color: #2980b9;
-        }
-        input[type="file"], input[type="number"], input[type="text"] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #2980b9;
-        }
-        #progress-text {
-            text-align: center;
-            font-weight: bold;
-        }
-        a {
-            color: #3498db;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-        .service-config {
-            display: block;
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .save-btn {
-            margin-top: 10px;
-        }
-    </style>
+    <title>Flask文档翻译工具</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon/favicon.ico">
+    <link href="/static/css/tailwind.min.css" rel="stylesheet">
 </head>
-<body>
-    <div class="nav">
-        <a href="/">首页</a>
-        <a href="/epub-markdown">ePub/Markdown 翻译</a>
-        <a href="/pdf" class="active">PDF 翻译</a>
-    </div>
-    
-    <h1>PDF 翻译工具</h1>
-    <form id="upload-form" enctype="multipart/form-data">
-        <div id="drop-area" style="border: 2px dashed #3498db; border-radius: 8px; padding: 40px; text-align: center; margin-bottom: 20px; background-color: #f8f9fa; transition: all 0.3s ease;">
-            <div id="drop-content">
-                <div style="font-size: 48px; color: #3498db; margin-bottom: 10px;">📄</div>
-                <p style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">拖放PDF文件到此处</p>
-                <p style="color: #666; margin-bottom: 20px;">或点击选择文件</p>
-                <input type="file" name="file" accept=".pdf" id="file-input" style="display: none;">
-                <button type="button" id="browse-btn" style="background-color: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px;">选择文件</button>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- 导航栏 -->
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex items-center">
+                        <h1 class="text-xl font-bold text-gray-800">文档翻译工具</h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <a href="/admin" class="text-gray-600 hover:text-gray-900">管理</a>
+                    </div>
+                </div>
             </div>
-            <div id="file-info-drop" style="display: none;">
-                <div style="font-size: 24px; color: #27ae60; margin-bottom: 10px;">✓</div>
-                <p style="font-weight: bold; margin-bottom: 5px;">文件已选择</p>
-                <p id="selected-filename" style="color: #666;"></p>
-                <button type="submit" style="background-color: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px;">上传文件</button>
+        </nav>
+
+        <!-- 主内容 -->
+        <main class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+            <div class="text-center">
+                <h2 class="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+                    专业的多格式文档翻译工具
+                </h2>
+                <p class="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
+                    支持PDF、EPUB、Markdown等多种格式，保持原格式的专业翻译
+                </p>
             </div>
-        </div>
-    </form>
-    <div id="file-info" style="display: none;">
-        <p>文件名: <span id="filename"></span></p>
-        <p>总页数: <span id="total-pages"></span></p>
-        <label for="start-page">起始页码:</label>
-        <input type="number" id="start-page" min="1" value="1">
-        <label for="end-page">结束页码:</label>
-        <input type="number" id="end-page" min="1">
-        <label for="target-language">目标语言:</label>
-        <input type="text" id="target-language" value="中文">
-        
-        <label for="translation-engine">翻译引擎:</label>
-        <select id="translation-engine">
-            <option value="babeldoc">BabelDOC (专业PDF翻译)</option>
-            <option value="legacy">传统翻译</option>
-        </select>
-        
-        <div id="babeldoc-options" style="margin-top: 10px;">
-            <label for="output-mode">输出模式:</label>
-            <select id="output-mode">
-                <option value="both">双语对照 + 纯译文</option>
-                <option value="dual-only">仅双语对照</option>
-                <option value="mono-only">仅纯译文</option>
-            </select>
-            
-            <div style="margin-top: 5px;">
-                <input type="checkbox" id="dual-translate-first">
-                <label for="dual-translate-first">双语模式中译文在前</label>
+
+            <!-- 功能卡片 -->
+            <div class="mt-12 grid gap-8 md:grid-cols-3">
+                <!-- PDF翻译 -->
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="p-6">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0 bg-red-500 rounded-md p-3">
+                                <svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt class="text-sm font-medium text-gray-500 truncate">PDF文档翻译</dt>
+                                    <dd class="text-lg font-medium text-gray-900">专业版式保持</dd>
+                                </dl>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <a href="/pdf" class="w-full flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
+                                开始翻译
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Markdown翻译 -->
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="p-6">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0 bg-blue-500 rounded-md p-3">
+                                <svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt class="text-sm font-medium text-gray-500 truncate">Markdown翻译</dt>
+                                    <dd class="text-lg font-medium text-gray-900">结构完整保持</dd>
+                                </dl>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <a href="/markdown" class="w-full flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                开始翻译
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EPUB翻译 -->
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="p-6">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0 bg-green-500 rounded-md p-3">
+                                <svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt class="text-sm font-medium text-gray-500 truncate">EPUB翻译</dt>
+                                    <dd class="text-lg font-medium text-gray-900">电子书格式</dd>
+                                </dl>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <a href="/epub" class="w-full flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
+                                开始翻译
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
-            
-            <div style="margin-top: 5px;">
-                <input type="checkbox" id="use-alternating-pages">
-                <label for="use-alternating-pages">使用交替页面模式</label>
+
+            <!-- 功能介绍 -->
+            <div class="mt-16">
+                <div class="lg:text-center">
+                    <h3 class="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl">
+                        强大的翻译功能
+                    </h3>
+                </div>
+
+                <div class="mt-10">
+                    <dl class="space-y-10 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-8 md:gap-y-10">
+                        <div class="relative">
+                            <dt>
+                                <div class="absolute flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
+                                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                    </svg>
+                                </div>
+                                <p class="ml-16 text-lg leading-6 font-medium text-gray-900">多引擎支持</p>
+                            </dt>
+                            <dd class="mt-2 ml-16 text-base text-gray-500">
+                                支持OpenAI、Ollama、BabelDOC等多种翻译引擎，灵活选择
+                            </dd>
+                        </div>
+
+                        <div class="relative">
+                            <dt>
+                                <div class="absolute flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
+                                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                    </svg>
+                                </div>
+                                <p class="ml-16 text-lg leading-6 font-medium text-gray-900">实时进度</p>
+                            </dt>
+                            <dd class="mt-2 ml-16 text-base text-gray-500">
+                                翻译过程中实时显示进度，支持中止和恢复操作
+                            </dd>
+                        </div>
+
+                        <div class="relative">
+                            <dt>
+                                <div class="absolute flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
+                                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                <p class="ml-16 text-lg leading-6 font-medium text-gray-900">格式保持</p>
+                            </dt>
+                            <dd class="mt-2 ml-16 text-base text-gray-500">
+                                完美保持原文档的格式、版式和结构
+                            </dd>
+                        </div>
+
+                        <div class="relative">
+                            <dt>
+                                <div class="absolute flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
+                                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                    </svg>
+                                </div>
+                                <p class="ml-16 text-lg leading-6 font-medium text-gray-900">安全加密</p>
+                            </dt>
+                            <dd class="mt-2 ml-16 text-base text-gray-500">
+                                API密钥和配置信息采用AES-256加密存储
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
             </div>
-        </div>
-        
-        <label for="service-select">翻译服务:</label>
-        <select id="service-select">
-            <option value="">加载中...</option>
-        </select>
-        
-        <div id="ollama-config" style="display: none;">
-            <label for="ollama-url">Ollama URL:</label>
-            <input type="text" id="ollama-url" value="http://localhost:11434/api/generate">
-            <label for="ollama-model">Ollama 模型名称:</label>
-            <input type="text" id="ollama-model" value="qwen2.5:7b">
-        </div>
-        
-        <button id="translate-btn">开始翻译</button>
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="bg-white mt-12">
+            <div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+                <p class="text-center text-gray-500">
+                    &copy; 2025 Flask文档翻译工具. 使用uv包管理器构建.
+                </p>
+            </div>
+        </footer>
     </div>
-    <div id="progress" style="display: none;">
-        <p id="progress-text">翻译准备中...</p>
-        <div id="progress-details" style="margin-top: 10px; font-size: 14px; color: #666;"></div>
-    </div>
-    <div id="result" style="display: none;">
-        <p>翻译完成。<a id="download-link" href="#">下载结果</a></p>
-    </div>
-
-    <script>
-        $(document).ready(function() {
-            // 拖放上传功能
-            const dropArea = document.getElementById('drop-area');
-            const fileInput = document.getElementById('file-input');
-            const browseBtn = document.getElementById('browse-btn');
-            const dropContent = document.getElementById('drop-content');
-            const fileInfoDrop = document.getElementById('file-info-drop');
-            const selectedFilename = document.getElementById('selected-filename');
-
-            // 防止默认拖放行为
-            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                dropArea.addEventListener(eventName, preventDefaults, false);
-                document.body.addEventListener(eventName, preventDefaults, false);
-            });
-
-            // 高亮拖放区域
-            ['dragenter', 'dragover'].forEach(eventName => {
-                dropArea.addEventListener(eventName, highlight, false);
-            });
-
-            ['dragleave', 'drop'].forEach(eventName => {
-                dropArea.addEventListener(eventName, unhighlight, false);
-            });
-
-            // 处理文件放置
-            dropArea.addEventListener('drop', handleDrop, false);
-
-            // 点击浏览按钮
-            browseBtn.addEventListener('click', () => {
-                fileInput.click();
-            });
-
-            // 文件选择变化
-            fileInput.addEventListener('change', handleFileSelect);
-
-            function preventDefaults(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-
-            function highlight() {
-                dropArea.style.borderColor = '#27ae60';
-                dropArea.style.backgroundColor = '#e8f5e8';
-            }
-
-            function unhighlight() {
-                dropArea.style.borderColor = '#3498db';
-                dropArea.style.backgroundColor = '#f8f9fa';
-            }
-
-            function handleDrop(e) {
-                const dt = e.dataTransfer;
-                const files = dt.files;
-                handleFiles(files);
-            }
-
-            function handleFileSelect(e) {
-                const files = e.target.files;
-                handleFiles(files);
-            }
-
-            function handleFiles(files) {
-                if (files.length > 0) {
-                    const file = files[0];
-                    if (file.type !== 'application/pdf') {
-                        alert('请选择PDF文件');
-                        return;
-                    }
-                    
-                    // 显示文件信息
-                    selectedFilename.textContent = file.name;
-                    dropContent.style.display = 'none';
-                    fileInfoDrop.style.display = 'block';
-                    
-                    // 设置文件输入
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(file);
-                    fileInput.files = dataTransfer.files;
-                }
-            }
-
-            // 上传表单提交
-            $('#upload-form').submit(function(e) {
-                e.preventDefault();
-                
-                if (!fileInput.files.length) {
-                    alert('请选择PDF文件');
-                    return;
-                }
-                
-                var formData = new FormData(this);
-                $.ajax({
-                    url: '/pdf',
-                    type: 'POST',
-                    data: formData,
-                    contentType: false,
-                    processData: false,
-                    success: function(response) {
-                        $('#filename').text(response.filename);
-                        $('#total-pages').text(response.total_pages);
-                        $('#end-page').attr('max', response.total_pages).val(response.total_pages);
-                        $('#file-info').show();
-                        
-                        // 重置拖放区域
-                        dropContent.style.display = 'block';
-                        fileInfoDrop.style.display = 'none';
-                    }
-                });
-            });
-
-            // Load available translation services
-            $.get('/services', function(services) {
-                var serviceSelect = $('#service-select');
-                serviceSelect.empty();
-                
-                if (Object.keys(services).length === 0) {
-                    serviceSelect.append('<option value="">无可用服务</option>');
-                } else {
-                    for (var name in services) {
-                        var service = services[name];
-                        var displayName = name + ' (' + service.service_type + ')';
-                        if (service.model_name) {
-                            displayName += ' - ' + service.model_name;
-                        }
-                        serviceSelect.append('<option value="' + name + '">' + displayName + '</option>');
-                    }
-                }
-                
-                // Show/hide ollama config based on selection
-                serviceSelect.change(function() {
-                    var selectedService = services[$(this).val()];
-                    if (selectedService && selectedService.service_type === 'ollama') {
-                        $('#ollama-config').show();
-                    } else {
-                        $('#ollama-config').hide();
-                    }
-                });
-            }).fail(function() {
-                $('#service-select').html('<option value="">加载服务失败</option>');
-            });
-            
-            // Show/hide BabelDOC options based on translation engine
-            $('#translation-engine').change(function() {
-                if ($(this).val() === 'babeldoc') {
-                    $('#babeldoc-options').show();
-                } else {
-                    $('#babeldoc-options').hide();
-                }
-            }).trigger('change'); // 初始化显示状态
-            
-
-            $('#translate-btn').click(function() {
-                var data = {
-                    filename: $('#filename').text(),
-                    start_page: $('#start-page').val(),
-                    end_page: $('#end-page').val(),
-                    target_language: $('#target-language').val(),
-                    translation_engine: $('#translation-engine').val(),
-                    service_name: $('#service-select').val(),
-                    ollama_url: $('#ollama-url').val(),
-                    ollama_model: $('#ollama-model').val()
-                };
-                
-                // 添加 BabelDOC 特定选项
-                if ($('#translation-engine').val() === 'babeldoc') {
-                    data.output_mode = $('#output-mode').val();
-                    data.dual_translate_first = $('#dual-translate-first').is(':checked');
-                    data.use_alternating_pages = $('#use-alternating-pages').is(':checked');
-                }
-                
-                $('#progress').show();
-                $.ajax({
-                    url: '/translate',
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify(data),
-                    success: function(response) {
-                        if (response.status === 'started') {
-                            var eventSource = new EventSource('/progress');
-                            eventSource.onmessage = function(e) {
-                                if (e.data.startsWith('complete:')) {
-                                    $('#progress-text').text('翻译完成！');
-                                    $('#progress-details').hide();
-                                    setTimeout(function() {
-                                        $('#progress').hide();
-                                        $('#download-link').attr('href', '/download/' + e.data.split(':')[1]);
-                                        $('#result').show();
-                                    }, 1000);
-                                    eventSource.close();
-                                } else {
-                                    // 显示详细的翻译进度信息
-                                    $('#progress-text').text('翻译进行中...');
-                                    $('#progress-details').html(e.data + '<br>' + $('#progress-details').html());
-                                    // 限制显示的行数
-                                    var lines = $('#progress-details').html().split('<br>');
-                                    if (lines.length > 10) {
-                                        $('#progress-details').html(lines.slice(0, 10).join('<br>'));
-                                    }
-                                }
-                            };
-                        }
-                    }
-                });
-            });
-        });
-    </script>
+    <script src="/static/js/jquery.min.js"></script>
 </body>
 </html>

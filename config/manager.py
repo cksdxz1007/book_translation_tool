@@ -1,237 +1,478 @@
-import uuid
-from typing import List, Dict, Optional
-from .database import DatabaseManager
-from .security import SecurityManager
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SQLite配置管理器
+
+提供加密的配置存储和管理功能
+"""
+
+import os
+import sqlite3
+import logging
+from cryptography.fernet import Fernet
+from typing import Dict, Optional, Any
+
+logger = logging.getLogger(__name__)
+
+def parse_token_input(value: str) -> Optional[int]:
+    """
+    将用户输入转换为 token 数字
+
+    支持格式:
+    - "128K" -> 128000
+    - "8K" -> 8192
+    - "1000" -> 1000
+    - "1M" -> 1000000
+    """
+    if not value or not value.strip():
+        return None
+
+    value = value.strip().upper()
+
+    # 处理 K, M 后缀 (使用 1024 进制，符合计算机科学惯例)
+    multiplier = 1
+    if value.endswith('K'):
+        multiplier = 1024
+        value = value[:-1]
+    elif value.endswith('M'):
+        multiplier = 1024 * 1024
+        value = value[:-1]
+
+    try:
+        return int(float(value) * multiplier)
+    except (ValueError, TypeError):
+        return None
+
+def format_token_value(value: Optional[int]) -> str:
+    """
+    将数字转换为友好显示格式（使用 1024 进制）
+
+    例如:
+    - 131072 -> "128K"
+    - 8192 -> "8K"
+    - 1048576 -> "1M"
+    - None -> ""
+    """
+    if value is None:
+        return ""
+
+    if value >= 1024 * 1024:
+        return f"{value // (1024 * 1024)}M"
+    elif value >= 1024:
+        return f"{value // 1024}K"
+    else:
+        return str(value)
 
 class ConfigManager:
-    def __init__(self, db_path: str, key_dir: str):
-        self.db = DatabaseManager(db_path)
-        self.security = SecurityManager(key_dir)
-    
-    def create_service(self, config: Dict) -> str:
-        service_id = str(uuid.uuid4())
-        
-        with self.db.get_connection() as conn:
-            api_key_encrypted = self.security.encrypt(config.get('api_key', ''))
-            
-            conn.execute("""
-                INSERT INTO translation_services (
-                    id, name, description, service_type, base_url,
-                    api_key_encrypted, model_name, temperature, max_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                service_id,
-                config['name'],
-                config.get('description', ''),
-                config['service_type'],
-                config['base_url'],
-                api_key_encrypted,
-                config['model_name'],
-                config.get('temperature', 0.3),
-                config.get('max_tokens', 4000)
-            ))
-        
-        return service_id
-    
-    def get_service(self, service_id: str) -> Optional[Dict]:
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(
-                'SELECT * FROM translation_services WHERE id = ?',
-                (service_id,)
-            )
-            row = cursor.fetchone()
-            
-            if not row:
-                return None
-            
-            service = dict(row)
-            service['api_key'] = self.security.decrypt(service['api_key_encrypted'])
-            service.pop('api_key_encrypted', None)
-            
-            return service
-    
-    def list_services(self, active_only: bool = True) -> List[Dict]:
-        with self.db.get_connection() as conn:
-            query = 'SELECT * FROM translation_services'
-            if active_only:
-                query += ' WHERE is_active = 1'
-            query += ' ORDER BY is_default DESC, name ASC'
-            
-            cursor = conn.execute(query)
-            services = []
-            
-            for row in cursor.fetchall():
-                service = dict(row)
-                service.pop('api_key_encrypted', None)
-                services.append(service)
-            
-            return services
-    
-    def get_default_service(self) -> Optional[Dict]:
-        """获取默认服务，处理无服务的情况"""
-        with self.db.get_connection() as conn:
-            # 首先查找标记为默认的活跃服务
-            cursor = conn.execute(
-                'SELECT * FROM translation_services WHERE is_default = 1 AND is_active = 1'
-            )
-            row = cursor.fetchone()
-            
-            if row:
-                return self.get_service(row['id'])
-            
-            # 如果没有默认服务，返回第一个活跃服务
-            cursor = conn.execute(
-                'SELECT * FROM translation_services WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1'
-            )
-            row = cursor.fetchone()
-            
-            if row:
-                return self.get_service(row['id'])
-            
-            # 没有任何服务
-            return None
-    
-    def get_service_by_name(self, service_name: str) -> Optional[Dict]:
-        """根据服务名称获取服务配置"""
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(
-                'SELECT * FROM translation_services WHERE name = ? AND is_active = 1',
-                (service_name,)
-            )
-            row = cursor.fetchone()
-            
-            if not row:
-                return None
-            
-            service = dict(row)
-            service['api_key'] = self.security.decrypt(service['api_key_encrypted'])
-            service.pop('api_key_encrypted', None)
-            return service
-    
-    def test_service_connection(self, service_id: str) -> Dict:
-        """测试服务连接"""
-        service = self.get_service(service_id)
-        if not service:
-            return {"success": False, "error": "Service not found"}
-        
+    """配置管理器"""
+
+    def __init__(self, db_path: str = 'data/config.db', key_path: str = 'data/keys/master.key'):
+        self.db_path = db_path
+        self.key_path = key_path
+        self.cipher = self._init_cipher()
+        self._init_db()
+
+    def _init_cipher(self) -> Optional[Fernet]:
+        """初始化加密器"""
         try:
-            if service['service_type'] in ['openai', 'deepseek']:
-                result = self._test_openai_service(service)
-            elif service['service_type'] == 'ollama':
-                result = self._test_ollama_service(service)
+            if os.path.exists(self.key_path):
+                with open(self.key_path, 'rb') as f:
+                    key = f.read()
+                return Fernet(key)
             else:
-                result = {"success": True, "message": "自定义服务测试跳过"}
-            
-            # 更新测试状态
-            with self.db.get_connection() as conn:
-                conn.execute('''
-                    UPDATE translation_services 
-                    SET last_tested = CURRENT_TIMESTAMP, test_status = ?
-                    WHERE id = ?
-                ''', (
-                    'success' if result['success'] else 'failed',
-                    service_id
-                ))
-            
-            return result
-            
+                # 生成新密钥
+                key = Fernet.generate_key()
+                os.makedirs(os.path.dirname(self.key_path), exist_ok=True)
+                with open(self.key_path, 'wb') as f:
+                    f.write(key)
+                return Fernet(key)
         except Exception as e:
-            with self.db.get_connection() as conn:
-                conn.execute('''
-                    UPDATE translation_services 
-                    SET last_tested = CURRENT_TIMESTAMP, test_status = 'failed'
-                    WHERE id = ?
-                ''', (service_id,))
-            
-            return {"success": False, "error": str(e)}
-    
-    def _test_openai_service(self, service: Dict) -> Dict:
-        """测试OpenAI兼容服务"""
-        import requests
-        
-        headers = {
-            'Authorization': f'Bearer {service["api_key"]}',
-            'Content-Type': 'application/json'
-        }
-        
-        data = {
-            'model': service['model_name'],
-            'messages': [{'role': 'user', 'content': 'Hello'}],
-            'max_tokens': 10
-        }
-        
-        response = requests.post(
-            f"{service['base_url']}/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            return {"success": True, "message": "连接测试成功"}
-        else:
-            return {"success": False, "error": f"HTTP {response.status_code}: {response.text[:100]}"}
-    
-    def _test_ollama_service(self, service: Dict) -> Dict:
-        """测试Ollama服务"""
-        import requests
-        
-        data = {
-            'model': service['model_name'],
-            'prompt': 'Hello',
-            'stream': False
-        }
-        
-        response = requests.post(
-            f"{service['base_url']}/api/generate",
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            return {"success": True, "message": "连接测试成功"}
-        else:
-            return {"success": False, "error": f"HTTP {response.status_code}: {response.text[:100]}"}
-    
-    def update_service(self, service_id: str, config: Dict) -> bool:
-        """更新服务配置"""
-        with self.db.get_connection() as conn:
-            # 检查服务是否存在
-            cursor = conn.execute('SELECT id FROM translation_services WHERE id = ?', (service_id,))
-            if not cursor.fetchone():
-                return False
-            
-            # 加密敏感字段
-            api_key_encrypted = self.security.encrypt(config.get('api_key', ''))
-            
-            cursor = conn.execute('''
-                UPDATE translation_services SET
-                    name = ?, description = ?, service_type = ?, base_url = ?,
-                    api_key_encrypted = ?, model_name = ?, temperature = ?, max_tokens = ?,
-                    updated_at = CURRENT_TIMESTAMP
+            logger.error(f"初始化加密器失败: {e}")
+            return None
+
+    def _init_db(self):
+        """初始化数据库"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS services (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    type TEXT NOT NULL,
+                    url TEXT,
+                    model TEXT,
+                    api_key TEXT,
+                    config TEXT,
+                    is_default INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'unknown',
+                    last_checked TIMESTAMP,
+                    context_length TEXT,
+                    max_output_length TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # 检查并添加 is_default 列（兼容旧数据库）
+            cursor.execute("PRAGMA table_info(services)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'is_default' not in columns:
+                cursor.execute('ALTER TABLE services ADD COLUMN is_default INTEGER DEFAULT 0')
+
+            # 检查并添加 status 列（兼容旧数据库）
+            if 'status' not in columns:
+                cursor.execute('ALTER TABLE services ADD COLUMN status TEXT DEFAULT "unknown"')
+
+            # 检查并添加 last_checked 列（兼容旧数据库）
+            if 'last_checked' not in columns:
+                cursor.execute('ALTER TABLE services ADD COLUMN last_checked TIMESTAMP')
+
+            # 检查并添加 context_length 列（兼容旧数据库）
+            if 'context_length' not in columns:
+                cursor.execute('ALTER TABLE services ADD COLUMN context_length INTEGER')
+            else:
+                # 如果是 TEXT 类型，转换为 INTEGER
+                cursor.execute("PRAGMA table_info(services)")
+                for col in cursor.fetchall():
+                    if col[1] == 'context_length' and col[2] == 'TEXT':
+                        logger.info("转换 context_length 从 TEXT 到 INTEGER")
+                        cursor.execute('ALTER TABLE services ADD COLUMN context_length_new INTEGER')
+                        cursor.execute('UPDATE services SET context_length_new = CAST(context_length AS INTEGER) WHERE context_length IS NOT NULL')
+                        cursor.execute('ALTER TABLE services DROP COLUMN context_length')
+                        cursor.execute('ALTER TABLE services RENAME COLUMN context_length_new TO context_length')
+
+            # 检查并添加 max_output_length 列（兼容旧数据库）
+            if 'max_output_length' not in columns:
+                cursor.execute('ALTER TABLE services ADD COLUMN max_output_length INTEGER')
+            else:
+                # 如果是 TEXT 类型，转换为 INTEGER
+                cursor.execute("PRAGMA table_info(services)")
+                for col in cursor.fetchall():
+                    if col[1] == 'max_output_length' and col[2] == 'TEXT':
+                        logger.info("转换 max_output_length 从 TEXT 到 INTEGER")
+                        cursor.execute('ALTER TABLE services ADD COLUMN max_output_length_new INTEGER')
+                        cursor.execute('UPDATE services SET max_output_length_new = CAST(max_output_length AS INTEGER) WHERE max_output_length IS NOT NULL')
+                        cursor.execute('ALTER TABLE services DROP COLUMN max_output_length')
+                        cursor.execute('ALTER TABLE services RENAME COLUMN max_output_length_new TO max_output_length')
+
+            conn.commit()
+            conn.close()
+            logger.info("数据库初始化完成")
+        except Exception as e:
+            logger.error(f"数据库初始化失败: {e}")
+
+    def encrypt_data(self, data: str) -> str:
+        """加密数据"""
+        if not self.cipher:
+            return data
+        try:
+            encrypted = self.cipher.encrypt(data.encode())
+            return encrypted.decode()
+        except Exception as e:
+            logger.error(f"数据加密失败: {e}")
+            return data
+
+    def decrypt_data(self, encrypted_data: str) -> str:
+        """解密数据"""
+        if not self.cipher:
+            return encrypted_data
+        try:
+            decrypted = self.cipher.decrypt(encrypted_data.encode())
+            return decrypted.decode()
+        except Exception as e:
+            logger.error(f"数据解密失败: {e}")
+            return encrypted_data
+
+    def save_service(self, name: str, service_type: str, url: str = None,
+                    model: str = None, api_key: str = None, config: Dict = None,
+                    context_length: str = None, max_output_length: str = None,
+                    is_default: bool = False) -> bool:
+        """保存翻译服务配置"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # 加密敏感数据
+            encrypted_api_key = self.encrypt_data(api_key) if api_key else None
+            encrypted_config = self.encrypt_data(str(config)) if config else None
+
+            # 转换 token 输入为数字
+            context_length_int = parse_token_input(context_length) if context_length else None
+            max_output_length_int = parse_token_input(max_output_length) if max_output_length else None
+
+            # 如果设为默认，先取消其他默认
+            if is_default:
+                cursor.execute('UPDATE services SET is_default = 0')
+
+            cursor.execute('''
+                INSERT OR REPLACE INTO services
+                (name, type, url, model, api_key, config, context_length, max_output_length, is_default)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, service_type, url, model, encrypted_api_key, encrypted_config, context_length_int, max_output_length_int, 1 if is_default else 0))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"服务配置已保存: {name}")
+            return True
+        except Exception as e:
+            logger.error(f"保存服务配置失败: {e}")
+            return False
+
+    def update_service(self, service_id: int, name: str, service_type: str, url: str = None,
+                      model: str = None, api_key: str = None, context_length: str = None,
+                      max_output_length: str = None) -> bool:
+        """更新翻译服务配置"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # 加密敏感数据
+            encrypted_api_key = self.encrypt_data(api_key) if api_key else None
+
+            # 转换 token 输入为数字
+            context_length_int = parse_token_input(context_length) if context_length else None
+            max_output_length_int = parse_token_input(max_output_length) if max_output_length else None
+
+            cursor.execute('''
+                UPDATE services SET name=?, type=?, url=?, model=?, api_key=?, context_length=?, max_output_length=?
+                WHERE id=?
+            ''', (name, service_type, url, model, encrypted_api_key, context_length_int, max_output_length_int, service_id))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"服务配置已更新: {name}")
+            return True
+        except Exception as e:
+            logger.error(f"更新服务配置失败: {e}")
+            return False
+
+    def set_default_service(self, service_id: int) -> bool:
+        """设置默认翻译服务"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # 先取消所有默认
+            cursor.execute('UPDATE services SET is_default = 0')
+            # 设置新默认
+            cursor.execute('UPDATE services SET is_default = 1 WHERE id = ?', (service_id,))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"已设置默认服务 ID: {service_id}")
+            return True
+        except Exception as e:
+            logger.error(f"设置默认服务失败: {e}")
+            return False
+
+    def delete_service_by_id(self, service_id: int) -> bool:
+        """根据ID删除翻译服务配置"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('DELETE FROM services WHERE id = ?', (service_id,))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"服务配置已删除 ID: {service_id}")
+            return True
+        except Exception as e:
+            logger.error(f"删除服务配置失败: {e}")
+            return False
+
+    def get_service(self, name: str) -> Optional[Dict[str, Any]]:
+        """获取翻译服务配置"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT * FROM services WHERE name = ?', (name,))
+            row = cursor.fetchone()
+
+            conn.close()
+
+            if row:
+                # 计算索引以处理不同数据库版本的字段
+                # id, name, type, url, model, api_key, config, is_default, status, last_checked, context_length, max_output_length, created_at
+                context_length_idx = 10 if len(row) > 10 else None
+                max_output_length_idx = 11 if len(row) > 11 else None
+                created_at_idx = 12 if len(row) > 12 else None
+
+                service = {
+                    'id': row[0],
+                    'name': row[1],
+                    'type': row[2],
+                    'url': row[3],
+                    'model': row[4],
+                    'api_key': self.decrypt_data(row[5]) if row[5] else None,
+                    'config': self.decrypt_data(row[6]) if row[6] else None,
+                    'context_length': row[context_length_idx] if context_length_idx and row[context_length_idx] is not None else None,
+                    'context_length_formatted': format_token_value(row[context_length_idx]) if context_length_idx and row[context_length_idx] is not None else "",
+                    'max_output_length': row[max_output_length_idx] if max_output_length_idx and row[max_output_length_idx] is not None else None,
+                    'max_output_length_formatted': format_token_value(row[max_output_length_idx]) if max_output_length_idx and row[max_output_length_idx] is not None else "",
+                    'created_at': row[created_at_idx] if created_at_idx and len(row) > created_at_idx else None
+                }
+                return service
+            return None
+        except Exception as e:
+            logger.error(f"获取服务配置失败: {e}")
+            return None
+
+    def get_all_services(self) -> list:
+        """获取所有翻译服务配置"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT id, name, type, url, model, api_key, config, is_default, status, last_checked, context_length, max_output_length, created_at FROM services ORDER BY is_default DESC, created_at DESC')
+            rows = cursor.fetchall()
+
+            conn.close()
+
+            services = []
+            for row in rows:
+                service = {
+                    'id': row[0],
+                    'name': row[1],
+                    'type': row[2],
+                    'url': row[3],
+                    'model': row[4],
+                    'api_key': self.decrypt_data(row[5]) if row[5] else None,
+                    'config': self.decrypt_data(row[6]) if row[6] else None,
+                    'is_default': bool(row[7]) if row[7] is not None else False,
+                    'status': row[8] if row[8] else 'unknown',
+                    'last_checked': row[9],
+                    'context_length': row[10],
+                    'context_length_formatted': format_token_value(row[10]) if row[10] is not None else "",
+                    'max_output_length': row[11],
+                    'max_output_length_formatted': format_token_value(row[11]) if row[11] is not None else "",
+                    'created_at': row[12]
+                }
+                services.append(service)
+
+            return services
+        except Exception as e:
+            logger.error(f"获取所有服务配置失败: {e}")
+            return []
+
+    def update_service_status(self, service_id: int, status: str) -> bool:
+        """更新服务状态"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                UPDATE services
+                SET status = ?, last_checked = CURRENT_TIMESTAMP
                 WHERE id = ?
-            ''', (
-                config['name'],
-                config.get('description', ''),
-                config['service_type'],
-                config['base_url'],
-                api_key_encrypted,
-                config['model_name'],
-                config.get('temperature', 0.3),
-                config.get('max_tokens', 4000),
-                service_id
-            ))
-            
-            return cursor.rowcount > 0
-        """设置默认服务"""
-        with self.db.get_connection() as conn:
-            # 清除所有默认标记
-            conn.execute('UPDATE translation_services SET is_default = 0')
-            
-            # 设置新的默认服务
-            cursor = conn.execute(
-                'UPDATE translation_services SET is_default = 1 WHERE id = ?',
-                (service_id,)
+            ''', (status, service_id))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"服务状态已更新 ID: {service_id}, 状态: {status}")
+            return True
+        except Exception as e:
+            logger.error(f"更新服务状态失败: {e}")
+            return False
+
+    def check_service_health(self, service: Dict[str, Any]) -> tuple[bool, str]:
+        """检查服务健康状态"""
+        try:
+            if service['type'] == 'openai':
+                return self._check_openai_service(service)
+            elif service['type'] == 'ollama':
+                return self._check_ollama_service(service)
+            elif service['type'] == 'third_party_completion':
+                return self._check_third_party_service(service)
+            else:
+                return False, f"不支持的服务类型: {service['type']}"
+        except Exception as e:
+            logger.error(f"检查服务健康状态失败: {e}")
+            return False, f"检查失败: {str(e)}"
+
+    def _check_openai_service(self, service: Dict[str, Any]) -> tuple[bool, str]:
+        """检查OpenAI兼容服务"""
+        try:
+            import requests
+
+            if not service.get('url') or not service.get('api_key'):
+                return False, "缺少URL或API Key"
+
+            headers = {
+                'Authorization': f"Bearer {service['api_key']}",
+                'Content-Type': 'application/json'
+            }
+
+            # 发送一个简单的模型列表请求来测试连接
+            response = requests.get(
+                f"{service['url'].rstrip('/')}/models",
+                headers=headers,
+                timeout=5
             )
-            
-            return cursor.rowcount > 0
+
+            if response.status_code == 200:
+                return True, "服务正常"
+            elif response.status_code == 401:
+                return False, "API Key无效"
+            else:
+                return False, f"HTTP {response.status_code}"
+        except requests.exceptions.Timeout:
+            return False, "连接超时"
+        except requests.exceptions.ConnectionError:
+            return False, "连接失败"
+        except Exception as e:
+            return False, f"检查失败: {str(e)}"
+
+    def _check_ollama_service(self, service: Dict[str, Any]) -> tuple[bool, str]:
+        """检查Ollama服务"""
+        try:
+            import requests
+
+            url = service.get('url', 'http://localhost:11434')
+
+            response = requests.get(
+                f"{url.rstrip('/')}/api/tags",
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                return True, "服务正常"
+            else:
+                return False, f"HTTP {response.status_code}"
+        except requests.exceptions.Timeout:
+            return False, "连接超时"
+        except requests.exceptions.ConnectionError:
+            return False, "连接失败"
+        except Exception as e:
+            return False, f"检查失败: {str(e)}"
+
+    def _check_third_party_service(self, service: Dict[str, Any]) -> tuple[bool, str]:
+        """检查第三方服务"""
+        try:
+            # 对于第三方服务，我们只检查是否有基本的配置
+            if not service.get('url'):
+                return False, "缺少URL"
+            return True, "配置正常"
+        except Exception as e:
+            return False, f"检查失败: {str(e)}"
+
+    def delete_service(self, name: str) -> bool:
+        """删除翻译服务配置"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('DELETE FROM services WHERE name = ?', (name,))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"服务配置已删除: {name}")
+            return True
+        except Exception as e:
+            logger.error(f"删除服务配置失败: {e}")
+            return False
+
+# 全局配置管理器实例
+config_manager = ConfigManager()

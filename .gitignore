@@ -1,50 +1,120 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
 *.so
-*.pyo
-*.pyd
+
+# Distribution / packaging
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Virtual Environment
-venv/
-env/
-.venv/
-ENV/
+# PyInstaller
+*.manifest
+*.spec
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Flask
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+test*
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+
+# Flask stuff:
 instance/
 .webassets-cache
 
-# Logs
-*.log
-app.log
-flask*.log
-nohup.out
+# Scrapy stuff:
+.scrapy
 
-# Configuration files (exclude production configs)
-services.json
-babeldoc.toml
+# Sphinx documentation
+docs/_build/
 
-# Database files
-data/
-*.db
-*.sqlite
-*.sqlite3
+# PyBuilder
+target/
 
-# Key files
-keys/
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# Temporary files
-uploads/
-results/
+# IPython
+profile_default/
+ipython_config.py
 
-# OS generated files
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
 .DS_Store?
 ._*
@@ -53,46 +123,19 @@ results/
 ehthumbs.db
 Thumbs.db
 
-# IDE specific files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Project specific
+uploads/*
+results/*
+!uploads/.gitkeep
+!results/.gitkeep
+data/config.db
+data/keys/master.key
+*.log
 
-# Backup files
-*.bak
-*.backup
-*.old
+# BabelDOC
+babeldoc.toml
 
-# Test files
-test_*.py
-*_test.py
+# other 
+UV_快速启动指南.md
+Docs/
 
-# Cache directories
-.cache/
-.pytest_cache/
-.mypy_cache/
-
-# Package files
-*.egg-info/
-dist/
-build/
-
-# Jupyter notebooks
-*.ipynb_checkpoints/
-
-# Project specific files
-*.pdf
-*.epub
-*.docx
-*.doc
-
-# Debug and test output files
-debug_*.md
-debug_*.py
-TEST_REPORT.md
-manual_test.py
-check_translation_result.py
-
-# Backup directories
-old_config_backup_*/
