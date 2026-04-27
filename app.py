@@ -32,13 +32,12 @@ app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_FILE_SIZE', 52428800))  # 
 try:
     from routes.api_routes import api_bp
     from routes.pdf_routes import pdf_bp
-    from routes.markdown_routes import markdown_bp
-    from routes.epub_routes import epub_bp
 
+    # 注册API蓝图
     app.register_blueprint(api_bp, url_prefix='/api')
-    app.register_blueprint(pdf_bp, url_prefix='/pdf')
-    app.register_blueprint(markdown_bp, url_prefix='/markdown')
-    app.register_blueprint(epub_bp, url_prefix='/epub')
+
+    # 注册PDF蓝图
+    app.register_blueprint(pdf_bp)
 
     logger.info("蓝图注册成功")
 except ImportError as e:
@@ -67,8 +66,8 @@ def apply_cache_control(response):
 # 主页路由
 @app.route('/')
 def index():
-    """应用主页"""
-    return render_template('index.html')
+    """应用主页 - 统一翻译页面"""
+    return render_template('unified_translate.html')
 
 # 静态文件服务（如果需要）
 @app.route('/static/<path:filename>')

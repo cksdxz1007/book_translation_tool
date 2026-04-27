@@ -56,6 +56,13 @@ def format_token_value(value: Optional[int]) -> str:
     if value is None:
         return ""
 
+    # Convert to int if it's a string
+    if isinstance(value, str):
+        try:
+            value = int(value)
+        except (ValueError, TypeError):
+            return ""
+
     if value >= 1024 * 1024:
         return f"{value // (1024 * 1024)}M"
     elif value >= 1024:
@@ -318,6 +325,49 @@ class ConfigManager:
             return None
         except Exception as e:
             logger.error(f"获取服务配置失败: {e}")
+            return None
+
+    def get_service_by_id(self, service_id: str) -> Optional[Dict[str, Any]]:
+        """通过ID获取翻译服务配置"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # 将service_id转换为整数
+            service_id_int = int(service_id)
+            cursor.execute('SELECT * FROM services WHERE id = ?', (service_id_int,))
+            row = cursor.fetchone()
+
+            conn.close()
+
+            if row:
+                # 计算索引以处理不同数据库版本的字段
+                # id, name, type, url, model, api_key, config, is_default, status, last_checked, context_length, max_output_length, created_at
+                context_length_idx = 10 if len(row) > 10 else None
+                max_output_length_idx = 11 if len(row) > 11 else None
+                created_at_idx = 12 if len(row) > 12 else None
+
+                service = {
+                    'id': row[0],
+                    'name': row[1],
+                    'type': row[2],
+                    'url': row[3],
+                    'model': row[4],
+                    'api_key': self.decrypt_data(row[5]) if row[5] else None,
+                    'config': self.decrypt_data(row[6]) if row[6] else None,
+                    'is_default': row[7] if len(row) > 7 else False,
+                    'status': row[8] if len(row) > 8 else None,
+                    'last_checked': row[9] if len(row) > 9 else None,
+                    'context_length': row[context_length_idx] if context_length_idx and row[context_length_idx] is not None else None,
+                    'context_length_formatted': format_token_value(row[context_length_idx]) if context_length_idx and row[context_length_idx] is not None else "",
+                    'max_output_length': row[max_output_length_idx] if max_output_length_idx and row[max_output_length_idx] is not None else None,
+                    'max_output_length_formatted': format_token_value(row[max_output_length_idx]) if max_output_length_idx and row[max_output_length_idx] is not None else "",
+                    'created_at': row[created_at_idx] if created_at_idx and len(row) > created_at_idx else None
+                }
+                return service
+            return None
+        except Exception as e:
+            logger.error(f"通过ID获取服务配置失败: {e}")
             return None
 
     def get_all_services(self) -> list:
