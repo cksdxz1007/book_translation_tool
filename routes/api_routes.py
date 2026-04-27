@@ -20,7 +20,21 @@ logger = logging.getLogger(__name__)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.manager import ConfigManager
 
+# 导入核心模块 - P0/P1 优化
+try:
+    from core import TokenProgressTracker, CheckpointManager, ErrorRecoveryManager
+    core_modules_available = True
+except ImportError:
+    core_modules_available = False
+    logger.warning("核心模块(core)未找到，部分高级功能将不可用")
+
 api_bp = Blueprint('api', __name__)
+
+# 初始化核心模块
+if core_modules_available:
+    checkpoint_manager = CheckpointManager()
+    error_recovery_manager = ErrorRecoveryManager()
+    token_progress_tracker = TokenProgressTracker()
 
 # 初始化配置管理器
 config_manager = ConfigManager()
@@ -682,3 +696,153 @@ def download_file(filename):
 def cleanup_files():
     """清理文件"""
     return jsonify({'status': 'success', 'message': '文件清理完成'})
+
+
+# ============================================================
+# P0/P1 优化 - 新增 API 端点
+# ============================================================
+
+@api_bp.route('/translate/progress/<task_id>', methods=['GET'])
+def get_token_progress(task_id):
+    """
+    获取基于 Token 的翻译进度
+
+    使用 CheckpointManager 获取任务的详细进度信息
+    """
+    if not core_modules_available:
+        return jsonify({'error': '核心模块不可用'}), 503
+
+    try:
+        # 使用 CheckpointManager 获取任务进度
+        progress_data = checkpoint_manager.get_task_progress(task_id)
+
+        if progress_data is None:
+            return jsonify({'error': '任务不存在'}), 404
+
+        # 获取 Token 进度跟踪信息
+        token_info = token_progress_tracker.get_progress(task_id)
+
+        response = {
+            'task_id': task_id,
+            'status': 'success',
+            'checkpoint_progress': progress_data,
+            'token_progress': token_info
+        }
+
+        # 如果有任务状态信息，也一并返回
+        task = tasks.get(task_id)
+        if task:
+            response['task_info'] = {
+                'state': task.get('state'),
+                'status': task.get('status'),
+                'progress': task.get('progress'),
+                'created_at': task.get('created_at')
+            }
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"获取Token进度失败: {e}")
+        return jsonify({'error': f'获取进度失败: {str(e)}'}), 500
+
+
+@api_bp.route('/translate/resume', methods=['GET'])
+def get_resumable_jobs():
+    """
+    获取可恢复的翻译任务列表
+
+    使用 CheckpointManager 获取所有可以恢复的翻译任务
+    """
+    if not core_modules_available:
+        return jsonify({'error': '核心模块不可用'}), 503
+
+    try:
+        # 使用 CheckpointManager 获取可恢复的任务列表
+        resumable_jobs = checkpoint_manager.get_resumable_jobs()
+
+        # 构建完整的任务信息
+        jobs_list = []
+        for job in resumable_jobs:
+            task_id = job.get('task_id')
+            task = tasks.get(task_id)
+
+            job_info = {
+                'task_id': task_id,
+                'checkpoint_info': job,
+                'task_info': None
+            }
+
+            if task:
+                job_info['task_info'] = {
+                    'original_filename': task.get('original_filename'),
+                    'file_type': task.get('file_type'),
+                    'state': task.get('state'),
+                    'status': task.get('status'),
+                    'progress': task.get('progress'),
+                    'created_at': task.get('created_at'),
+                    'config': task.get('config', {})
+                }
+
+            jobs_list.append(job_info)
+
+        return jsonify({
+            'status': 'success',
+            'resumable_jobs': jobs_list,
+            'total': len(jobs_list)
+        })
+
+    except Exception as e:
+        logger.error(f"获取可恢复任务失败: {e}")
+        return jsonify({'error': f'获取可恢复任务失败: {str(e)}'}), 500
+
+
+@api_bp.route('/translate/resume/<task_id>', methods=['POST'])
+def resume_translation(task_id):
+    """
+    恢复已停止的翻译任务
+
+    使用 ErrorRecoveryManager 加载检查点并恢复翻译
+    """
+    if not core_modules_available:
+        return jsonify({'error': '核心模块不可用'}), 503
+
+    try:
+        # 检查任务是否存在
+        task = tasks.get(task_id)
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+
+        # 检查任务是否可恢复
+        if task.get('state') not in ['stopped', 'error', 'paused', 'interrupted']:
+            return jsonify({
+                'error': '任务状态不允许恢复',
+                'current_state': task.get('state')
+            }), 400
+
+        # 使用 ErrorRecoveryManager 加载检查点
+        checkpoint = error_recovery_manager.load_checkpoint(task_id)
+
+        if checkpoint is None:
+            return jsonify({'error': '无法加载检查点，任务可能没有有效的保存状态'}), 404
+
+        # 更新任务状态为处理中
+        task['state'] = 'processing'
+        task['status'] = '正在恢复翻译...'
+        task['checkpoint_loaded'] = True
+        save_tasks()
+
+        # 获取恢复所需的配置信息
+        resume_config = request.get_json() or {}
+
+        logger.info(f"成功加载任务 {task_id} 的检查点，开始恢复翻译")
+
+        return jsonify({
+            'status': 'success',
+            'message': '翻译任务已恢复',
+            'task_id': task_id,
+            'checkpoint': checkpoint
+        })
+
+    except Exception as e:
+        logger.error(f"恢复翻译任务失败: {e}")
+        return jsonify({'error': f'恢复翻译失败: {str(e)}'}), 500
