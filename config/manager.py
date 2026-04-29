@@ -227,15 +227,33 @@ class ConfigManager:
             return False
 
     def update_service(self, service_id: int, name: str, service_type: str, url: str = None,
-                      model: str = None, api_key: str = None, context_length: str = None,
+                      model: str = None, api_key=None, context_length: str = None,
                       max_output_length: str = None) -> bool:
-        """更新翻译服务配置"""
+        """更新翻译服务配置
+
+        Args:
+            api_key: Three states supported:
+                - None: Don't change (preserve existing)
+                - '' (empty string): Clear the API key
+                - 'value': Set to new value (will be encrypted)
+        """
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            # 加密敏感数据
-            encrypted_api_key = self.encrypt_data(api_key) if api_key else None
+            # Handle api_key update logic
+            # None = don't change, '' = clear, 'value' = set new value
+            if api_key is None:
+                # Don't change - fetch existing
+                cursor.execute('SELECT api_key FROM services WHERE id = ?', (service_id,))
+                row = cursor.fetchone()
+                encrypted_api_key = row[0] if row else None
+            elif api_key == '':
+                # Clear the API key
+                encrypted_api_key = None
+            else:
+                # Set new value
+                encrypted_api_key = self.encrypt_data(api_key)
 
             # 转换 token 输入为数字
             context_length_int = parse_token_input(context_length) if context_length else None
@@ -499,12 +517,53 @@ class ConfigManager:
             return False, f"检查失败: {str(e)}"
 
     def _check_third_party_service(self, service: Dict[str, Any]) -> tuple[bool, str]:
-        """检查第三方服务"""
+        """检查第三方服务 - 实际发送测试请求验证连接"""
         try:
-            # 对于第三方服务，我们只检查是否有基本的配置
-            if not service.get('url'):
+            import requests
+
+            url = service.get('url')
+            api_key = service.get('api_key')
+            model = service.get('model', 'deepseek-chat')
+
+            if not url:
                 return False, "缺少URL"
-            return True, "配置正常"
+
+            if not api_key:
+                return False, "缺少API Key"
+
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}'
+            }
+
+            payload = {
+                'model': model,
+                'messages': [
+                    {'role': 'user', 'content': 'Hi'}
+                ],
+                'max_tokens': 5
+            }
+
+            # 发送测试请求到 chat/completions 端点
+            response = requests.post(
+                f'{url.rstrip("/")}/chat/completions',
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                return True, "服务正常"
+            elif response.status_code == 401:
+                return False, "API Key无效"
+            elif response.status_code == 404:
+                return False, "API端点不存在"
+            else:
+                return False, f"HTTP {response.status_code}: {response.text[:100]}"
+        except requests.exceptions.Timeout:
+            return False, "连接超时"
+        except requests.exceptions.ConnectionError:
+            return False, "连接失败"
         except Exception as e:
             return False, f"检查失败: {str(e)}"
 

@@ -6,6 +6,7 @@ API路由
 提供RESTful API接口
 """
 
+import asyncio
 import os
 import uuid
 import json
@@ -23,10 +24,11 @@ from config.manager import ConfigManager
 # 导入核心模块 - P0/P1 优化
 try:
     from core import TokenProgressTracker, CheckpointManager, ErrorRecoveryManager
+    from core.translation import EPUBTranslator, HTMLTranslator
     core_modules_available = True
-except ImportError:
+except ImportError as e:
     core_modules_available = False
-    logger.warning("核心模块(core)未找到，部分高级功能将不可用")
+    logger.warning(f"核心模块(core)未找到，部分高级功能将不可用: {e}")
 
 api_bp = Blueprint('api', __name__)
 
@@ -138,10 +140,11 @@ def unified_translate():
         filename = secure_filename(file.filename)
         file_ext = filename.rsplit('.', 1)[1].lower()
 
-        # 目前只支持PDF文件
-        if file_ext != 'pdf':
+        # 目前只支持PDF和EPUB文件
+        supported_formats = ['pdf', 'epub']
+        if file_ext not in supported_formats:
             return jsonify({
-                'error': f'暂不支持{file_ext.upper()}文件翻译。目前仅支持PDF文件翻译。'
+                'error': f'暂不支持{file_ext.upper()}文件翻译。目前仅支持PDF和EPUB文件翻译。'
             }), 400
 
         # 生成任务 ID
@@ -171,14 +174,17 @@ def unified_translate():
 
         # 启动异步任务处理
         import threading
-        thread = threading.Thread(target=process_pdf_translation, args=(task_id,))
+        if file_ext == 'pdf':
+            thread = threading.Thread(target=process_pdf_translation, args=(task_id,))
+        else:
+            thread = threading.Thread(target=process_epub_translation, args=(task_id,))
         thread.daemon = True
         thread.start()
 
         return jsonify({
             'task_id': task_id,
             'status': 'success',
-            'message': 'PDF翻译任务已创建'
+            'message': f'{file_ext.upper()}翻译任务已创建'
         })
 
     except Exception as e:
@@ -645,6 +651,196 @@ def process_pdf_translation(task_id):
         print(f"PDF翻译错误 (任务 {task_id}):")
         traceback.print_exc()
 
+def process_epub_translation(task_id):
+    """处理EPUB翻译任务 - 使用新的 EPUBTranslator"""
+    task = tasks.get(task_id)
+    if not task:
+        return
+
+    try:
+        import time
+        from pathlib import Path
+
+        # 获取任务信息
+        file_path = task['file_path']
+        config = task['config']
+        options = task['options']
+        original_filename = task['original_filename']
+
+        # 获取翻译样式选项
+        translation_style = options.get('epubTranslationStyle', 'mono')
+        add_log(task_id, f"调试-epubOptions: {options}")
+        add_log(task_id, f"调试-epubTranslationStyle值: [{translation_style}]")
+        add_log(task_id, f"翻译样式: {'双语对照' if translation_style == 'dual' else '仅译文'}")
+
+        # 添加日志
+        add_log(task_id, f"开始处理文件: {original_filename}")
+        add_log(task_id, "文件类型: EPUB")
+        add_log(task_id, "正在解析EPUB文件结构...")
+
+        # 获取翻译服务配置
+        service_id = config.get('serviceId')
+        if not service_id:
+            raise ValueError("未选择翻译服务")
+
+        service = config_manager.get_service_by_id(service_id)
+        if not service:
+            raise ValueError(f"服务ID {service_id} 不存在")
+
+        add_log(task_id, f"使用翻译服务: {service['name']} ({service['type']})")
+
+        # 获取 API 配置
+        api_key = service.get('api_key')
+        if not api_key:
+            raise ValueError("服务API密钥未配置")
+
+        model = service.get('model', 'deepseek-chat')
+        base_url = service.get('url')
+
+        # 获取 token 限制
+        context_length = service.get('context_length') or 0
+        max_output_length = service.get('max_output_length') or 0
+
+        try:
+            context_length_val = int(context_length)
+            max_output_length_val = int(max_output_length)
+        except (ValueError, TypeError):
+            context_length_val = 0
+            max_output_length_val = 0
+
+        max_input_tokens = int(context_length_val * 0.8) if context_length_val > 0 else 8000
+        api_max_tokens = max_output_length_val if max_output_length_val > 0 else 8192
+
+        # 语言代码规范化
+        def normalize_language_code(code):
+            mapping = {
+                'en': 'en', 'zh': 'zh', 'ja': 'ja', 'ko': 'ko',
+                'fr': 'fr', 'de': 'de', 'es': 'es'
+            }
+            return mapping.get(code, code)
+
+        lang_in = normalize_language_code(config.get('sourceLang', 'en'))
+        lang_out = normalize_language_code(config.get('targetLang', 'zh'))
+
+        add_log(task_id, f"翻译语言: {lang_in} -> {lang_out}")
+
+        # 构建文件路径
+        input_path = Path(file_path)
+        output_path = Path(f"data/results/{input_path.stem}_translated.epub")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 创建翻译配置
+        from core.translation.html_translator import TranslateConfig
+        translate_config = TranslateConfig(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            lang_in=lang_in,
+            lang_out=lang_out,
+            max_tokens=api_max_tokens,
+            max_input_tokens=max_input_tokens,
+            temperature=0.3
+        )
+
+        # 创建 HTML 翻译器
+        html_translator = HTMLTranslator(translate_config)
+
+        # 创建 EPUB 翻译器
+        epub_translator = EPUBTranslator(
+            input_path=str(input_path),
+            output_path=str(output_path),
+            html_translator=html_translator,
+            translation_style=translation_style,
+            task_id=task_id,
+            checkpoint_manager=checkpoint_manager if core_modules_available else None,
+            progress_callback=lambda stats: _update_task_progress(task_id, stats),
+            log_callback=lambda msg: add_log(task_id, msg)
+        )
+
+        # 执行翻译
+        add_log(task_id, "开始 EPUB 翻译...")
+        result = epub_translator.translate()
+
+        if result.success:
+            task['state'] = 'completed'
+            task['progress'] = 100
+            task['status'] = f"翻译完成 {result.completed_units}/{result.total_units}"
+
+            # 生成正确的下载文件名
+            config = task['config']
+            source_lang = config.get('sourceLang', 'en')
+            target_lang = config.get('targetLang', 'zh')
+            base_name = os.path.splitext(task['original_filename'])[0]
+            ext = os.path.splitext(task['original_filename'])[1]
+
+            # 语言代码映射
+            lang_mapping = {
+                'en': 'en-US', 'zh': 'zh-CN', 'ja': 'ja-JP',
+                'ko': 'ko-KR', 'fr': 'fr-FR', 'de': 'de-DE', 'es': 'es-ES'
+            }
+            source_lang = lang_mapping.get(source_lang, source_lang)
+            target_lang = lang_mapping.get(target_lang, target_lang)
+
+            # 生成文件名: 原文件名_源语言_目标语言.翻译样式.扩展名
+            task['file_suffix'] = translation_style
+            result_filename = f"{base_name}_{source_lang}_{target_lang}.{translation_style}{ext}"
+            result_path = os.path.join('data/results', result_filename)
+
+            # 重命名文件（如果文件名不同）
+            if result.output_path != result_path:
+                import shutil
+                if os.path.exists(result_path):
+                    os.remove(result_path)
+                shutil.move(result.output_path, result_path)
+                add_log(task_id, f"文件已重命名: {result_filename}")
+
+            task['download_path'] = result_path
+            task['preview_path'] = result_path
+            save_tasks()
+
+            add_log(task_id, f"EPUB翻译完成！")
+            add_log(task_id, f"成功: {result.completed_units} 单元")
+            if result.failed_units > 0:
+                add_log(task_id, f"失败: {result.failed_units} 单元")
+            add_log(task_id, f"耗时: {result.elapsed_seconds:.2f} 秒")
+            add_log(task_id, f"输出文件: {result_filename}")
+        else:
+            raise Exception(result.error)
+
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        add_log(task_id, f"翻译失败: {error_msg}")
+        task['state'] = 'error'
+        task['status'] = f'翻译失败: {error_msg}'
+        task['error'] = error_msg
+        save_tasks()
+
+        print(f"EPUB翻译错误 (任务 {task_id}):")
+        traceback.print_exc()
+
+
+def _update_task_progress(task_id: str, stats):
+    """更新任务进度"""
+    if task_id in tasks:
+        task = tasks[task_id]
+        task['progress'] = stats.progress_percent
+        task['status'] = f"翻译中... {stats.completed_chunks}/{stats.total_chunks}"
+        save_tasks()
+
+
+def _add_log_legacy(task_id: str, message: str):
+    """保留的日志函数（向后兼容）"""
+    if task_id in tasks:
+        task = tasks[task_id]
+        if 'logs' not in task:
+            task['logs'] = []
+        task['logs'].append({
+            'time': time.strftime('%H:%M:%S'),
+            'message': message
+        })
+
+
 # 保留原有的 API 接口（向后兼容）
 @api_bp.route('/translate', methods=['POST'])
 def translate_pdf():
@@ -696,6 +892,101 @@ def download_file(filename):
 def cleanup_files():
     """清理文件"""
     return jsonify({'status': 'success', 'message': '文件清理完成'})
+
+@api_bp.route('/translate/results-list', methods=['GET'])
+def get_results_list():
+    """获取翻译结果列表"""
+    try:
+        results_dir = 'data/results'
+        if not os.path.exists(results_dir):
+            return jsonify({'status': 'success', 'files': []})
+
+        files = []
+        for filename in os.listdir(results_dir):
+            file_path = os.path.join(results_dir, filename)
+            if os.path.isfile(file_path):
+                stat = os.stat(file_path)
+                files.append({
+                    'name': filename,
+                    'size': stat.st_size,
+                    'mtime': int(stat.st_mtime)
+                })
+
+        # 按修改时间倒序排列
+        files.sort(key=lambda x: x['mtime'], reverse=True)
+
+        return jsonify({'status': 'success', 'files': files})
+    except Exception as e:
+        logger.error(f"获取结果列表失败: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+@api_bp.route('/translate/download-by-file/', methods=['GET'])
+def download_by_filename(filename):
+    """通过文件名下载翻译结果"""
+    try:
+        # URL 解码文件名
+        from urllib.parse import unquote
+        filename = unquote(filename)
+
+        file_path = os.path.join('data/results', filename)
+        if not os.path.exists(file_path):
+            return jsonify({'error': '文件不存在'}), 404
+
+        return send_file(file_path, as_attachment=True)
+    except Exception as e:
+        logger.error(f"下载文件失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/translate/clear-history', methods=['POST'])
+def clear_history():
+    """清除上传和翻译结果历史"""
+    try:
+        import shutil
+
+        # 清除 uploads 目录（保留 .gitkeep）
+        uploads_dir = 'uploads'
+        if os.path.exists(uploads_dir):
+            for item in os.listdir(uploads_dir):
+                item_path = os.path.join(uploads_dir, item)
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+
+        # 清除 data/uploads 目录
+        data_uploads_dir = 'data/uploads'
+        if os.path.exists(data_uploads_dir):
+            shutil.rmtree(data_uploads_dir)
+            os.makedirs(data_uploads_dir, exist_ok=True)
+
+        # 清除 data/results 目录（保留 .gitkeep）
+        results_dir = 'data/results'
+        if os.path.exists(results_dir):
+            for item in os.listdir(results_dir):
+                if item != '.gitkeep':
+                    item_path = os.path.join(results_dir, item)
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+
+        # 清除 tasks.json
+        tasks_file = 'data/tasks.json'
+        if os.path.exists(tasks_file):
+            os.remove(tasks_file)
+
+        # 清除 checkpoints 目录
+        checkpoints_dir = 'data/checkpoints'
+        if os.path.exists(checkpoints_dir):
+            shutil.rmtree(checkpoints_dir)
+            os.makedirs(checkpoints_dir, exist_ok=True)
+
+        logger.info("历史记录已清除")
+        return jsonify({'status': 'success', 'message': '历史记录已清除'})
+
+    except Exception as e:
+        logger.error(f"清除历史失败: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 # ============================================================

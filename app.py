@@ -69,6 +69,12 @@ def index():
     """应用主页 - 统一翻译页面"""
     return render_template('unified_translate.html')
 
+# 翻译结果页面
+@app.route('/results')
+def results_page():
+    """翻译结果列表页面"""
+    return render_template('results.html')
+
 # 静态文件服务（如果需要）
 @app.route('/static/<path:filename>')
 def static_files(filename):

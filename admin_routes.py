@@ -91,12 +91,18 @@ def api_update_service(service_id):
     service_type = data.get('type', '').strip()
     url = data.get('url', '').strip()
     model = data.get('model', '').strip()
-    api_key = data.get('api_key', '').strip()
+    api_key = data.get('api_key')  # Use None as sentinel - absent means don't change
     context_length = data.get('context_length', '').strip()
     max_output_length = data.get('max_output_length', '').strip()
 
     if not name or not service_type:
         return jsonify({'status': 'error', 'message': '服务名称和类型不能为空'}), 400
+
+    # api_key=None means don't change (key not in request or explicit 'dont_change')
+    # api_key='' means clear the key
+    # api_key='xxx' means set to xxx
+    if api_key is not None:
+        api_key = api_key.strip() or None  # Empty string becomes None (clear)
 
     success = config_manager.update_service(
         service_id=service_id,
@@ -104,7 +110,7 @@ def api_update_service(service_id):
         service_type=service_type,
         url=url or None,
         model=model or None,
-        api_key=api_key or None,
+        api_key=api_key,
         context_length=context_length or None,
         max_output_length=max_output_length or None
     )
