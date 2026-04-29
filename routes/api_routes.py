@@ -912,9 +912,14 @@ def process_markdown_translation(task_id: str):
             if not await adapter.prepare_for_translation():
                 raise Exception("无法读取Markdown文件")
 
+            add_log(task_id, f"文件已加载，内容长度: {len(adapter.content)} 字符")
+
             # 获取翻译单元
             units = adapter.get_translation_units()
             add_log(task_id, f"分块完成，共 {len(units)} 个块")
+
+            if len(units) == 0:
+                raise Exception("没有找到可翻译的内容块")
 
             total_units = len(units)
 
@@ -934,22 +939,25 @@ def process_markdown_translation(task_id: str):
                     )
 
                     # 准备上下文
-                    context = unit.metadata.get('context_before', '') + '\n' + unit.original_content
-                    if unit.metadata.get('context_after'):
+                    context = unit.metadata.get('context_before', '') + '\n' + unit.content if unit.metadata else unit.content
+                    if unit.metadata and unit.metadata.get('context_after'):
                         context += '\n' + unit.metadata['context_after']
 
                     # 翻译
                     result = api_client.translate(
-                        text=unit.original_content,
+                        text=unit.content,  # 使用 content 而不是 original_content
                         lang_in=lang_in,
                         lang_out=lang_out
                     )
 
                     if result.success:
                         await adapter.save_unit_translation(unit.unit_id, result.translated_text)
-                        add_log(task_id, f"块 {i+1} 翻译完成")
+                        add_log(task_id, f"块 {i+1} 翻译完成，译文长度: {len(result.translated_text)}")
                     else:
                         add_log(task_id, f"块 {i+1} 翻译失败: {result.error}")
+                        # 保存原文作为回退
+                        await adapter.save_unit_translation(unit.unit_id, unit.content)
+                        add_log(task_id, f"块 {i+1} 已保存原文（翻译失败）")
 
                     # 更新进度
                     task['progress'] = int((i + 1) / total_units * 100)

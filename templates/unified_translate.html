@@ -994,7 +994,7 @@
             document.getElementById(optionsId).classList.remove('hidden');
 
             // 重置翻译样式选择为默认值（仅译文），避免浏览器记住之前的选择
-            const allTranslationStyleRadios = document.querySelectorAll('input[name="pdfTranslationStyle"], input[name="epubTranslationStyle"]');
+            const allTranslationStyleRadios = document.querySelectorAll('input[name="pdfTranslationStyle"], input[name="epubTranslationStyle"], input[name="mdTranslationStyle"]');
             allTranslationStyleRadios.forEach(radio => {
                 if (radio.value === 'mono') {
                     radio.checked = true;
@@ -1314,7 +1314,7 @@
             fileInput.value = '';
 
             // 重置翻译样式选择（仅译文为默认）
-            const translationStyleRadios = document.querySelectorAll('input[name="pdfTranslationStyle"], input[name="epubTranslationStyle"]');
+            const translationStyleRadios = document.querySelectorAll('input[name="pdfTranslationStyle"], input[name="epubTranslationStyle"], input[name="mdTranslationStyle"]');
             translationStyleRadios.forEach(radio => {
                 if (radio.value === 'mono') {
                     radio.checked = true;
