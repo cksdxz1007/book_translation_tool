@@ -432,6 +432,26 @@
                                 </div>
 
                                 <div id="mdOptions" class="space-y-3 hidden">
+                                    <!-- 翻译样式选择 -->
+                                    <div class="p-3 bg-gray-50 rounded-lg">
+                                        <span class="text-sm font-medium text-gray-900 block mb-2">翻译样式</span>
+                                        <div class="space-y-2">
+                                            <label class="flex items-center">
+                                                <input type="radio" name="mdTranslationStyle" value="mono" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300" checked>
+                                                <div class="ml-3">
+                                                    <span class="text-sm text-gray-900">仅译文</span>
+                                                    <p class="text-xs text-gray-500">只显示翻译后的内容</p>
+                                                </div>
+                                            </label>
+                                            <label class="flex items-center">
+                                                <input type="radio" name="mdTranslationStyle" value="dual" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300">
+                                                <div class="ml-3">
+                                                    <span class="text-sm text-gray-900">双语对照</span>
+                                                    <p class="text-xs text-gray-500">原文和译文依次显示</p>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
                                     <label class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer">
                                         <input type="checkbox" id="mdCode" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
                                         <div class="ml-3">
@@ -1027,8 +1047,11 @@
                 // 保存翻译样式到全局配置
                 window.currentConfig.translationStyle = options.epubTranslationStyle;
             } else if (detectedFileType === 'md') {
+                options.mdTranslationStyle = document.querySelector('input[name="mdTranslationStyle"]:checked')?.value || 'mono';
                 options.mdCode = document.getElementById('mdCode').checked;
                 options.mdFrontmatter = document.getElementById('mdFrontmatter').checked;
+                // 保存翻译样式到全局配置
+                window.currentConfig.translationStyle = options.mdTranslationStyle;
             }
 
             // 更新UI状态

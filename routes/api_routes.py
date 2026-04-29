@@ -140,11 +140,11 @@ def unified_translate():
         filename = secure_filename(file.filename)
         file_ext = filename.rsplit('.', 1)[1].lower()
 
-        # 目前只支持PDF和EPUB文件
-        supported_formats = ['pdf', 'epub']
+        # 目前支持PDF、EPUB和Markdown文件
+        supported_formats = ['pdf', 'epub', 'md', 'markdown']
         if file_ext not in supported_formats:
             return jsonify({
-                'error': f'暂不支持{file_ext.upper()}文件翻译。目前仅支持PDF和EPUB文件翻译。'
+                'error': f'暂不支持{file_ext.upper()}文件翻译。目前仅支持PDF、EPUB和Markdown文件翻译。'
             }), 400
 
         # 生成任务 ID
@@ -176,8 +176,10 @@ def unified_translate():
         import threading
         if file_ext == 'pdf':
             thread = threading.Thread(target=process_pdf_translation, args=(task_id,))
-        else:
+        elif file_ext == 'epub':
             thread = threading.Thread(target=process_epub_translation, args=(task_id,))
+        else:  # md, markdown
+            thread = threading.Thread(target=process_markdown_translation, args=(task_id,))
         thread.daemon = True
         thread.start()
 
@@ -817,6 +819,204 @@ def process_epub_translation(task_id):
         save_tasks()
 
         print(f"EPUB翻译错误 (任务 {task_id}):")
+        traceback.print_exc()
+
+
+def process_markdown_translation(task_id: str):
+    """处理Markdown翻译任务 - 使用 MarkdownAdapter"""
+    task = tasks.get(task_id)
+    if not task:
+        return
+
+    try:
+        import time
+        from pathlib import Path
+        from core.adapters.markdown_adapter import MarkdownAdapter
+
+        # 获取任务信息
+        file_path = task['file_path']
+        config = task['config']
+        options = task['options']
+        original_filename = task['original_filename']
+
+        # 获取翻译样式选项
+        translation_style = options.get('mdTranslationStyle', 'mono')
+        add_log(task_id, f"翻译样式: {'双语对照' if translation_style == 'dual' else '仅译文'}")
+
+        # 添加日志
+        add_log(task_id, f"开始处理文件: {original_filename}")
+        add_log(task_id, "文件类型: Markdown")
+
+        # 获取翻译服务配置
+        service_id = config.get('serviceId')
+        if not service_id:
+            raise ValueError("未选择翻译服务")
+
+        service = config_manager.get_service_by_id(service_id)
+        if not service:
+            raise ValueError(f"服务ID {service_id} 不存在")
+
+        add_log(task_id, f"使用翻译服务: {service['name']} ({service['type']})")
+
+        # 获取 API 配置
+        api_key = service.get('api_key')
+        if not api_key:
+            raise ValueError("服务API密钥未配置")
+
+        model = service.get('model', 'deepseek-chat')
+        base_url = service.get('url')
+
+        # 语言代码规范化
+        def normalize_language_code(code):
+            mapping = {
+                'en': 'en', 'zh': 'zh', 'ja': 'ja', 'ko': 'ko',
+                'fr': 'fr', 'de': 'de', 'es': 'es'
+            }
+            return mapping.get(code, code)
+
+        lang_in = normalize_language_code(config.get('sourceLang', 'en'))
+        lang_out = normalize_language_code(config.get('targetLang', 'zh'))
+
+        add_log(task_id, f"翻译语言: {lang_in} -> {lang_out}")
+
+        # 构建文件路径
+        input_path = Path(file_path)
+        output_path = Path(f"data/results/{input_path.stem}_translated.md")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 创建 Markdown 适配器配置
+        adapter_config = {
+            'lang_in': lang_in,
+            'lang_out': lang_out,
+            'max_tokens': 800,
+            'soft_limit': 0.8,
+            'api_key': api_key,
+            'model': model,
+            'base_url': base_url
+        }
+
+        # 创建适配器
+        adapter = MarkdownAdapter(
+            input_file_path=str(input_path),
+            output_file_path=str(output_path),
+            config=adapter_config
+        )
+
+        import asyncio
+
+        # 执行翻译
+        async def do_translate():
+            nonlocal adapter
+
+            # 准备翻译
+            if not await adapter.prepare_for_translation():
+                raise Exception("无法读取Markdown文件")
+
+            # 获取翻译单元
+            units = adapter.get_translation_units()
+            add_log(task_id, f"分块完成，共 {len(units)} 个块")
+
+            total_units = len(units)
+
+            # 翻译每个单元
+            for i, unit in enumerate(units):
+                add_log(task_id, f"翻译块 {i+1}/{total_units}...")
+
+                try:
+                    # 这里应该调用 API 翻译
+                    # 由于 MarkdownAdapter 使用异步模式，需要调用翻译 API
+                    from core.translation.api_client import APIClient
+
+                    api_client = APIClient(
+                        api_key=api_key,
+                        model=model,
+                        base_url=base_url
+                    )
+
+                    # 准备上下文
+                    context = unit.metadata.get('context_before', '') + '\n' + unit.original_content
+                    if unit.metadata.get('context_after'):
+                        context += '\n' + unit.metadata['context_after']
+
+                    # 翻译
+                    result = api_client.translate(
+                        text=unit.original_content,
+                        lang_in=lang_in,
+                        lang_out=lang_out
+                    )
+
+                    if result.success:
+                        await adapter.save_unit_translation(unit.unit_id, result.translated_text)
+                        add_log(task_id, f"块 {i+1} 翻译完成")
+                    else:
+                        add_log(task_id, f"块 {i+1} 翻译失败: {result.error}")
+
+                    # 更新进度
+                    task['progress'] = int((i + 1) / total_units * 100)
+                    save_tasks()
+
+                except Exception as e:
+                    add_log(task_id, f"块 {i+1} 翻译异常: {str(e)}")
+
+            # 重建输出
+            bilingual = translation_style == 'dual'
+            output_content = await adapter.reconstruct_output(bilingual=bilingual)
+
+            # 保存文件
+            output_path.write_bytes(output_content)
+
+            return output_path
+
+        # 运行异步翻译
+        result_path = asyncio.run(do_translate())
+
+        # 生成正确的下载文件名
+        source_lang = config.get('sourceLang', 'en')
+        target_lang = config.get('targetLang', 'zh')
+        base_name = os.path.splitext(original_filename)[0]
+        ext = os.path.splitext(original_filename)[1]
+
+        # 语言代码映射
+        lang_mapping = {
+            'en': 'en-US', 'zh': 'zh-CN', 'ja': 'ja-JP',
+            'ko': 'ko-KR', 'fr': 'fr-FR', 'de': 'de-DE', 'es': 'es-ES'
+        }
+        source_lang = lang_mapping.get(source_lang, source_lang)
+        target_lang = lang_mapping.get(target_lang, target_lang)
+
+        # 生成文件名
+        result_filename = f"{base_name}_{source_lang}_{target_lang}.{translation_style}{ext}"
+        final_path = os.path.join('data/results', result_filename)
+
+        # 重命名文件
+        if str(result_path) != final_path:
+            import shutil
+            if os.path.exists(final_path):
+                os.remove(final_path)
+            shutil.move(str(result_path), final_path)
+
+        # 更新任务状态
+        task['state'] = 'completed'
+        task['progress'] = 100
+        task['status'] = '翻译完成'
+        task['download_path'] = final_path
+        task['preview_path'] = final_path
+        task['file_suffix'] = translation_style
+        save_tasks()
+
+        add_log(task_id, f"Markdown翻译完成！")
+        add_log(task_id, f"输出文件: {result_filename}")
+
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        add_log(task_id, f"翻译失败: {error_msg}")
+        task['state'] = 'error'
+        task['status'] = f'翻译失败: {error_msg}'
+        task['error'] = error_msg
+        save_tasks()
+
+        print(f"Markdown翻译错误 (任务 {task_id}):")
         traceback.print_exc()
 
 
